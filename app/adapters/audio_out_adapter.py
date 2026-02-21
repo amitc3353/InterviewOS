@@ -91,7 +91,8 @@ class AudioOutAdapter:
         try:
             sd.stop()
         except Exception:
-            pass  # Ignore errors during cleanup
+            # Ignore errors during cleanup - safe to suppress
+            pass  # nosec
 
         self.is_playing = False
         self._current_stream = None

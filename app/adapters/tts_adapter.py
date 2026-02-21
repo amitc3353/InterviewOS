@@ -78,11 +78,11 @@ class TTSAdapter:
 
         try:
             response = self.client.audio.speech.create(
-                model=self.config["model"],
-                voice=self.config["voice"],
+                model=str(self.config["model"]),
+                voice=str(self.config["voice"]),
                 input=text,
-                speed=self.config["speed"],
-                response_format=self.config["response_format"],
+                speed=float(self.config["speed"]),
+                response_format=str(self.config["response_format"]),  # type: ignore
             )
 
             # Return audio bytes

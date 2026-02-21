@@ -56,7 +56,7 @@ class LocalMicTransport(Transport):
         self.stream = None
         self.current_partial = ""
         self.audio_chunks_sent = 0
-        self.engine = None  # Will be set in run()
+        self.engine: InterviewEngine | None = None  # Will be set in run()
 
         # Keyboard listener
         self.listener = None
