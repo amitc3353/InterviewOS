@@ -37,6 +37,7 @@ class LocalMicTransport(Transport):
         self.is_recording = False
         self.stream = None
         self.current_partial = ""
+        self.audio_chunks_sent = 0
 
         # Keyboard listener
         self.listener = None
