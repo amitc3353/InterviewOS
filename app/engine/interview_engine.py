@@ -83,7 +83,7 @@ class InterviewEngine:
                     "candidate": t.candidate_transcript,
                     "interviewer": t.interviewer_response.get("question", ""),
                 }
-                for t in self.session.turns[-5:]  # Last 5 turns for context
+                for t in self.session.turns[-20:]  # Last 20 turns for context
             ],
         }
 

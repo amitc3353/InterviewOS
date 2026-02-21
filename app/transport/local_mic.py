@@ -19,22 +19,6 @@ class LocalMicTransport(Transport):
     - Mic muted during TTS playback
     """
 
-    # Natural thinking fillers (latency masking)
-    THINKING_FILLERS = [
-        "Hmm...",
-        "Let me think...",
-        "Good question...",
-        "Okay...",
-        "Right...",
-        "Interesting...",
-        "Let me see...",
-        "One sec...",
-        "Alright...",
-        "Got it...",
-        "Mm-hmm...",
-        "Sure...",
-    ]
-
     def __init__(self, scenario: str = "payments", voice_config: str = "nova_hd"):
         """
         Initialize local mic transport.
@@ -246,12 +230,8 @@ class LocalMicTransport(Transport):
 
         print(f"\n💬 Interviewer: {full_message}\n")
 
-        # Synthesize
-        print("🔊 Generating audio...")
+        # Synthesize and play
         audio_buffer = self.tts.synthesize(full_message)
-
-        # Play
-        print("▶️  Playing...\n")
         self.audio_out.play(audio_buffer)
 
         print("✅ Ready! Press SPACEBAR to respond...\n")

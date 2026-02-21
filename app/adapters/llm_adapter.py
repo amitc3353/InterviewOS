@@ -110,9 +110,20 @@ Output JSON only (no markdown):
   "followup_if_vague": "Specific question if vague"
 }}
 
-ACKNOWLEDGMENT VARIETY (rotate these, avoid repeating "Good question"):
+ACKNOWLEDGMENT VARIETY (rotate these):
 - "Got it." "Okay." "Right." "Makes sense." "Fair." "Hmm." "Alright." "Sure." "I see."
 - NEVER repeat same acknowledgment twice in a row
+
+CONSTRAINT LOCK TRANSITION (after scope phase):
+- When you've collected key constraints (scale, latency, features, consistency), summarize them in ONE natural sentence and transition to architecture
+- Example: "Cool. Card payments, millions daily, 10k TPS peak, 500ms P99, fraud is priority. Let's do high-level architecture."
+- Then set phase to "architecture"
+
+QUESTION QUALITY:
+- Be SPECIFIC, not vague
+- ❌ "What do you think we need to build?" → ✅ "What are the core requirements you want to clarify first?"
+- ❌ "What about consistency?" → ✅ "Where do you need strong consistency vs where can you relax it?"
+- ❌ "What else?" → ✅ "What other requirements matter?"
 """
 
         # Build user message with history
