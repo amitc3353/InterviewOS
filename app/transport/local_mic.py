@@ -171,7 +171,8 @@ class LocalMicTransport(Transport):
             print("❌ No speech detected. Try again.\n")
             return
 
-        print(f"\n📝 You said: {transcript}\n")
+        print(f"\n📝 You said: {transcript}")
+        print("\n⏹️  Processing...\n")
 
         # Process turn
         self._process_turn(transcript)
