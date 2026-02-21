@@ -30,3 +30,11 @@ logs/
 dist/
 build/
 *.egg-info/
+
+# InterviewOS artifacts
+transcripts/
+audio/
+scores/
+*.wav
+*.m4a
+*.mp3
