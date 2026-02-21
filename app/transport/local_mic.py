@@ -110,19 +110,33 @@ class LocalMicTransport(Transport):
         self.stt.on_partial(self._on_partial_transcript)
         self.stt.start_listening()
 
+        # Audio chunk counter for debugging
+        self.audio_chunks_sent = 0
+
         # Start audio stream
         def audio_callback(indata, frames, time, status):
             if status:
-                print(f"Audio status: {status}")
+                print(f"⚠️  Audio status: {status}")
 
             # Send to STT
             audio_bytes = (indata * 32767).astype(np.int16).tobytes()
+
+            # Debug: Log audio level
+            audio_level = np.abs(indata).mean()
+            if audio_level > 0.01:  # Only log if there's actual sound
+                self.audio_chunks_sent += 1
+                if self.audio_chunks_sent % 10 == 0:  # Log every 10 chunks
+                    print(
+                        f"🎵 Audio level: {audio_level:.3f} (chunk #{self.audio_chunks_sent})"
+                    )
+
             self.stt.send_audio(audio_bytes)
 
         self.stream = sd.InputStream(
             samplerate=16000, channels=1, dtype="float32", callback=audio_callback
         )
         self.stream.start()
+        print("🎙️  Microphone active - speak now!")
 
     def _stop_recording(self):
         """Stop recording and process transcript."""
