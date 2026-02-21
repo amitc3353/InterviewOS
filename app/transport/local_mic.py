@@ -56,6 +56,7 @@ class LocalMicTransport(Transport):
         self.stream = None
         self.current_partial = ""
         self.audio_chunks_sent = 0
+        self.engine = None  # Will be set in run()
 
         # Keyboard listener
         self.listener = None
@@ -67,6 +68,9 @@ class LocalMicTransport(Transport):
         Args:
             engine: InterviewEngine instance
         """
+        # Store engine reference
+        self.engine = engine
+
         print("\n🎤 InterviewOS - Voice Mode (Phase 1)")
         print("=" * 50)
         print(f"Scenario: {self.scenario}")
@@ -198,6 +202,10 @@ class LocalMicTransport(Transport):
 
     def _process_turn(self, transcript: str):
         """Process candidate's response and get next question."""
+        if not self.engine or not self.engine.session:
+            print("❌ Error: Engine not initialized")
+            return
+
         # LATENCY MASKING: Play thinking filler immediately
         thinking_filler = random.choice(self.THINKING_FILLERS)
         print(f"💭 {thinking_filler}")
@@ -206,17 +214,22 @@ class LocalMicTransport(Transport):
         filler_audio = self.tts.synthesize(thinking_filler)
         self.audio_out.play(filler_audio)
 
-        # Now call LLM (user hears the filler, not awkward silence)
-        context = {
-            "scenario": self.scenario,
-            "turn_count": 1,
-            "current_phase": "requirements_gathering",
-            "candidate_transcript": transcript,
-            "platform_context": "",
-            "history": [],
-        }
+        # Get context from engine (includes history, locked constraints, phase)
+        context = self.engine.process_turn(transcript)
 
+        # Debug logging
+        print(
+            f"[DEBUG] Turn: {context['turn_count']}, Phase: {context['current_phase']}"
+        )
+        print(f"[DEBUG] History length: {len(context['history'])}")
+
+        # Call LLM with full context
         response = self.llm.get_next_question(context)
+
+        # Record turn in engine (updates history, locked constraints, phase)
+        self.engine.record_turn(transcript, response)
+
+        # Speak the question
         self._speak_question(response)
 
     def _speak_question(self, response: dict):

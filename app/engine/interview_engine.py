@@ -76,13 +76,14 @@ class InterviewEngine:
             "current_phase": self.session.current_phase,
             "candidate_transcript": transcript,
             "platform_context": PLATFORM_CONTEXT,
+            "locked_constraints": self.session.locked_constraints.to_prompt_text(),
             "history": [
                 {
                     "turn": t.turn_number,
                     "candidate": t.candidate_transcript,
                     "interviewer": t.interviewer_response.get("question", ""),
                 }
-                for t in self.session.turns[-3:]  # Last 3 turns for context
+                for t in self.session.turns[-5:]  # Last 5 turns for context
             ],
         }
 

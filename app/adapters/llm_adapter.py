@@ -43,6 +43,10 @@ class LLMAdapter:
 
 Follow the Interview Protocol strictly.
 
+{context["locked_constraints"]}
+
+CRITICAL: If a constraint is LOCKED above, NEVER re-ask it. Build on it instead.
+
 INTERVIEW PROTOCOL:
 - Return JSON with: phase, interviewer_says, question, what_im_listening_for, followup_if_vague
 - interviewer_says: 1-3 WORDS MAX (just acknowledgment: "Got it.", "Hmm.", "Okay.")
@@ -99,11 +103,16 @@ STYLE:
 Output JSON only (no markdown):
 {{
   "phase": "current or next phase name",
-  "interviewer_says": "Brief 1-2 sentence response",
-  "question": "One focused question",
-  "what_im_listening_for": "Key signals you're evaluating",
-  "followup_if_vague": "Specific question if answer is too high-level"
+  "interviewer_says": "1-3 word acknowledgment ONLY",
+  "question": "One focused question (5-10 words)",
+  "update_locked_constraints": {{"key": "value if candidate just established a fact"}},
+  "what_im_listening_for": "Key signals",
+  "followup_if_vague": "Specific question if vague"
 }}
+
+ACKNOWLEDGMENT VARIETY (rotate these, avoid repeating "Good question"):
+- "Got it." "Okay." "Right." "Makes sense." "Fair." "Hmm." "Alright." "Sure." "I see."
+- NEVER repeat same acknowledgment twice in a row
 """
 
         # Build user message with history
