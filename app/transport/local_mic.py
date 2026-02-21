@@ -139,10 +139,16 @@ class LocalMicTransport(Transport):
             self.stream = None
 
         # Get final transcript
-        transcript = self.stt.stop_listening()
+        try:
+            transcript = self.stt.stop_listening()
+            print(f"📋 Raw transcript: '{transcript}'")
+        except Exception as e:
+            print(f"❌ STT error: {e}")
+            return
 
         if not transcript.strip():
-            print("❌ No speech detected. Try again.\n")
+            print("❌ No speech detected. Try again.")
+            print("💡 Tip: Speak clearly and loudly. Check mic permissions.\n")
             return
 
         print(f"\n📝 You said: {transcript}\n")
