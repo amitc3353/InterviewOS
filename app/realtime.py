@@ -9,19 +9,23 @@ from app.transport import LocalMicTransport
 
 def main():
     """Real-time voice interview mode."""
-    parser = argparse.ArgumentParser(
-        description="InterviewOS - Real-time Voice Mode"
-    )
-    
+    parser = argparse.ArgumentParser(description="InterviewOS - Real-time Voice Mode")
+
     parser.add_argument(
         "--scenario",
         default="payments",
-        choices=["payments", "social_feed", "e_commerce", "ride_sharing", "video_streaming"],
-        help="Interview scenario"
+        choices=[
+            "payments",
+            "social_feed",
+            "e_commerce",
+            "ride_sharing",
+            "video_streaming",
+        ],
+        help="Interview scenario",
     )
-    
+
     args = parser.parse_args()
-    
+
     # Validate environment
     try:
         Config.validate()
@@ -29,11 +33,11 @@ def main():
     except ValueError as e:
         print(str(e), file=sys.stderr)
         return 1
-    
+
     # Create engine and transport
     engine = InterviewEngine()
     transport = LocalMicTransport(scenario=args.scenario)
-    
+
     # Run
     try:
         transport.run(engine)
