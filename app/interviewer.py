@@ -21,7 +21,7 @@ class InterviewSession:
         """
         self.scenario = scenario
         self.turn_count = 0
-        self.history = []
+        self.history: list[dict] = []
         self.current_phase = "requirements_gathering"
 
         if not Config.ANTHROPIC_API_KEY:
@@ -80,11 +80,17 @@ Output format (JSON):
         )
 
         # Parse response (strip markdown code fences if present)
-        raw = response.content[0].text.strip()
-        if raw.startswith("```"):
-            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-        try:
+        content_block = response.content[0]
+        if hasattr(content_block, "text"):
+            raw = content_block.text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
             result = json.loads(raw)
+        else:
+            raise RuntimeError("Unexpected response format from Claude")
+
+        try:
+            pass  # Keep try block structure
         except json.JSONDecodeError:
             result = {
                 "question": raw,
