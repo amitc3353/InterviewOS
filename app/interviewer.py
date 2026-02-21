@@ -73,19 +73,21 @@ Output format (JSON):
 
         # Call Claude
         response = self.client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-5",
             max_tokens=1024,
             system=system_prompt,
             messages=[{"role": "user", "content": user_message}],
         )
 
-        # Parse response
+        # Parse response (strip markdown code fences if present)
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         try:
-            result = json.loads(response.content[0].text)
+            result = json.loads(raw)
         except json.JSONDecodeError:
-            # Fallback if not valid JSON
             result = {
-                "question": response.content[0].text,
+                "question": raw,
                 "intent": "Follow-up question",
                 "what_good_looks_like": "Clear, structured thinking",
             }

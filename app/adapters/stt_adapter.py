@@ -1,6 +1,8 @@
 """STT Adapter - Streaming speech-to-text via Deepgram."""
 
 import queue
+import threading
+import time
 from typing import Callable, Optional
 from deepgram import DeepgramClient, LiveTranscriptionEvents, LiveOptions
 from app.config import Config
@@ -25,6 +27,7 @@ class STTAdapter:
         self.partial_callback: Optional[Callable[[str], None]] = None
         self.final_transcript = []
         self.audio_queue = queue.Queue()
+        self._close_event = threading.Event()
 
     def on_partial(self, callback: Callable[[str], None]) -> None:
         """
@@ -58,7 +61,6 @@ class STTAdapter:
 
             if result.is_final:
                 adapter_self.final_transcript.append(sentence)
-                print(f"✅ Final transcript: {sentence}")
             elif adapter_self.partial_callback:
                 # Call partial callback for streaming feedback
                 adapter_self.partial_callback(sentence)
@@ -66,22 +68,21 @@ class STTAdapter:
         def on_error(self, error, **kwargs):
             print(f"❌ STT Error: {error}")
 
-        def on_open(self, open_event, **kwargs):
-            print("🔗 Deepgram connection opened")
-
         def on_close(self, close_event, **kwargs):
-            print("🔌 Deepgram connection closed")
+            adapter_self._close_event.set()
 
         # Register handlers
         self.connection.on(LiveTranscriptionEvents.Transcript, on_message)
         self.connection.on(LiveTranscriptionEvents.Error, on_error)
-        self.connection.on(LiveTranscriptionEvents.Open, on_open)
         self.connection.on(LiveTranscriptionEvents.Close, on_close)
 
         # Start connection
         options = LiveOptions(
             model="nova-2",
             language="en-US",
+            encoding="linear16",
+            sample_rate=16000,
+            channels=1,
             smart_format=True,
             interim_results=True,
             utterance_end_ms=1000,
@@ -113,9 +114,12 @@ class STTAdapter:
 
         self.is_listening = False
 
-        # Flush and close connection
+        # Flush and close connection, then wait for final transcripts to arrive
         if self.connection:
+            self._close_event.clear()
             self.connection.finish()
+            self._close_event.wait(timeout=2.0)  # wait up to 2s for on_close signal
+            time.sleep(0.1)  # small buffer for on_message callbacks to complete
             self.connection = None
 
         # Join final transcript

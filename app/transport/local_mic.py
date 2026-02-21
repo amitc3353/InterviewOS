@@ -110,24 +110,23 @@ class LocalMicTransport(Transport):
 
         # Start STT
         self.stt.on_partial(self._on_partial_transcript)
-        self.stt.start_listening()
+        try:
+            self.stt.start_listening()
+        except Exception as e:
+            print(f"❌ STT connection failed: {e}")
+            self.is_recording = False
+            return
 
         # Start audio stream
         def audio_callback(indata, frames, time, status):
             if status:
                 print(f"⚠️  Audio status: {status}")
 
-            # Send to STT
-            audio_bytes = (indata * 32767).astype(np.int16).tobytes()
+            # Apply gain boost to compensate for quiet Mac mic signal
+            boosted = np.clip(indata * 6.0, -1.0, 1.0)
+            audio_bytes = (boosted * 32767).astype(np.int16).tobytes()
 
-            # Debug: Log audio level
-            audio_level = np.abs(indata).mean()
-            if audio_level > 0.01:  # Only log if there's actual sound
-                self.audio_chunks_sent += 1
-                if self.audio_chunks_sent % 10 == 0:  # Log every 10 chunks
-                    print(
-                        f"🎵 Audio level: {audio_level:.3f} (chunk #{self.audio_chunks_sent})"
-                    )
+            self.audio_chunks_sent += 1
 
             self.stt.send_audio(audio_bytes)
 
@@ -135,7 +134,6 @@ class LocalMicTransport(Transport):
             samplerate=16000, channels=1, dtype="float32", callback=audio_callback
         )
         self.stream.start()
-        print("🎙️  Microphone active - speak now!")
 
     def _stop_recording(self):
         """Stop recording and process transcript."""
@@ -152,19 +150,16 @@ class LocalMicTransport(Transport):
             self.stream = None
 
         # Get final transcript
-        print(f"🎵 Total audio chunks sent: {self.audio_chunks_sent}")
         self.audio_chunks_sent = 0  # Reset for next recording
 
         try:
             transcript = self.stt.stop_listening()
-            print(f"📋 Raw transcript: '{transcript}'")
         except Exception as e:
             print(f"❌ STT error: {e}")
             return
 
         if not transcript.strip():
-            print("❌ No speech detected. Try again.")
-            print("💡 Tip: Speak clearly and loudly. Check mic permissions.\n")
+            print("❌ No speech detected. Try again.\n")
             return
 
         print(f"\n📝 You said: {transcript}\n")

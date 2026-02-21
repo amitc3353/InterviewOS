@@ -77,7 +77,7 @@ Be honest but constructive. Use the scoring guide in the context.
     client = Anthropic(api_key=Config.ANTHROPIC_API_KEY)
 
     response = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
+        model="claude-sonnet-4-5",
         max_tokens=2048,
         system=system_prompt,
         messages=[{"role": "user", "content": user_message}],
