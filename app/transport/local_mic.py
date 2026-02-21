@@ -146,7 +146,6 @@ class LocalMicTransport(Transport):
         if not self.is_recording:
             return
 
-        print("\n⏹️  Processing...")
         self.is_recording = False
 
         # Stop stream (defensive cleanup)
