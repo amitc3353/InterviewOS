@@ -10,7 +10,33 @@ AI-powered system design interview practice platform.
    pip3 install -r requirements.txt
    ```
 
-## Usage
+## Modes
+
+### 🎤 Real-Time Voice Mode (NEW - Phase 1)
+Interactive push-to-talk voice interview:
+```bash
+python3 -m app.realtime --scenario payments
+```
+
+**Controls:**
+- **SPACEBAR (hold)** - Talk
+- **SPACEBAR (release)** - Submit your response
+- **ESC** - Exit interview
+
+**Flow:**
+1. Interviewer asks opening question (plays audio)
+2. Press and hold SPACEBAR while speaking
+3. Release SPACEBAR to submit
+4. Interviewer responds with follow-up (audio)
+5. Repeat
+
+Half-duplex: microphone muted during TTS playback.
+
+---
+
+## CLI Mode (Batch Processing)
+
+### Usage
 
 ### STT (Speech-to-Text)
 Transcribe audio files to text:
@@ -65,14 +91,37 @@ Output:
 
 ## Architecture
 
-- `app/stt.py` - Deepgram speech-to-text
-- `app/tts.py` - Deepgram text-to-speech  
-- `app/interviewer.py` - Claude-powered AI interviewer
-- `app/scorer.py` - Claude-powered rubric scoring
-- `app/config.py` - Environment + path management
-- `INTERVIEW_PLATFORM_CONTEXT.md` - Rubric, format, interviewer behavior
+**Modular design for easy transport swapping (Phase 1 → Phase 2)**
+
+```
+app/
+  engine/              # Core business logic (phase-independent)
+    interview_engine.py  - Session state machine
+    session.py          - Session state management
+  
+  adapters/            # Service adapters (swappable)
+    stt_adapter.py      - Deepgram streaming STT
+    llm_adapter.py      - Claude interviewer
+    tts_adapter.py      - OpenAI TTS
+    audio_out_adapter.py - sounddevice playback
+  
+  transport/           # Transport layer (swappable)
+    local_mic.py        - Phase 1: Push-to-talk local mic
+    daily.py            - Phase 2: Daily.co WebRTC (future)
+  
+  realtime.py          - Voice mode entry point
+  cli.py               - Batch CLI commands
+```
+
+See `ARCHITECTURE.md` for full design principles and contracts.
+
+**Legacy modules (still functional):**
+- `app/stt.py` - Batch Deepgram STT
+- `app/tts.py` - Batch Deepgram TTS  
+- `app/interviewer.py` - Batch Claude interviewer
+- `app/scorer.py` - Claude rubric scoring
 
 ## Requirements
 
 - Python 3.8+
-- API keys: Anthropic (Claude), Deepgram, Daily.co (optional)
+- API keys: Anthropic (Claude), OpenAI (TTS), Deepgram (STT), Daily.co (Phase 2)
