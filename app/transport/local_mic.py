@@ -139,6 +139,8 @@ class LocalMicTransport(Transport):
             self.stream = None
 
         # Get final transcript
+        print(f"🎵 Total audio chunks sent: {self.audio_chunks_sent}")
+
         try:
             transcript = self.stt.stop_listening()
             print(f"📋 Raw transcript: '{transcript}'")
