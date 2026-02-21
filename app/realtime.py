@@ -36,7 +36,7 @@ def main():
 
     # Create engine and transport
     engine = InterviewEngine()
-    transport = LocalMicTransport(scenario=args.scenario)
+    transport = LocalMicTransport(scenario=args.scenario, voice_config=args.voice)
 
     # Run
     try:

@@ -35,19 +35,20 @@ class LocalMicTransport(Transport):
         "Sure...",
     ]
 
-    def __init__(self, scenario: str = "payments"):
+    def __init__(self, scenario: str = "payments", voice_config: str = "nova_hd"):
         """
         Initialize local mic transport.
 
         Args:
             scenario: Interview scenario
+            voice_config: TTS voice preset (alloy_hd, onyx_hd, nova_hd)
         """
         self.scenario = scenario
 
         # Adapters
         self.stt = STTAdapter()
         self.llm = LLMAdapter()
-        self.tts = TTSAdapter()
+        self.tts = TTSAdapter(voice_config=voice_config)
         self.audio_out = AudioOutAdapter()
 
         # State
