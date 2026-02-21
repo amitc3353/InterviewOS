@@ -46,6 +46,9 @@ class STTAdapter:
         # Create connection
         self.connection = self.client.listen.live.v("1")
 
+        # Store reference for event handlers
+        adapter_self = self
+
         # Event handlers
         def on_message(self, result, **kwargs):
             sentence = result.channel.alternatives[0].transcript
@@ -54,17 +57,26 @@ class STTAdapter:
                 return
 
             if result.is_final:
-                self.final_transcript.append(sentence)
-            elif self.partial_callback:
+                adapter_self.final_transcript.append(sentence)
+                print(f"✅ Final transcript: {sentence}")
+            elif adapter_self.partial_callback:
                 # Call partial callback for streaming feedback
-                self.partial_callback(sentence)
+                adapter_self.partial_callback(sentence)
 
         def on_error(self, error, **kwargs):
-            print(f"STT Error: {error}")
+            print(f"❌ STT Error: {error}")
+
+        def on_open(self, open_event, **kwargs):
+            print("🔗 Deepgram connection opened")
+
+        def on_close(self, close_event, **kwargs):
+            print("🔌 Deepgram connection closed")
 
         # Register handlers
         self.connection.on(LiveTranscriptionEvents.Transcript, on_message)
         self.connection.on(LiveTranscriptionEvents.Error, on_error)
+        self.connection.on(LiveTranscriptionEvents.Open, on_open)
+        self.connection.on(LiveTranscriptionEvents.Close, on_close)
 
         # Start connection
         options = LiveOptions(
