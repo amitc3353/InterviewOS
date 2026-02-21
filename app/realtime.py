@@ -24,6 +24,13 @@ def main():
         help="Interview scenario",
     )
 
+    parser.add_argument(
+        "--voice",
+        default="nova_hd",
+        choices=["alloy_hd", "onyx_hd", "nova_hd"],
+        help="TTS voice preset (alloy_hd=neutral, onyx_hd=authoritative, nova_hd=warm)",
+    )
+
     args = parser.parse_args()
 
     # Validate environment
@@ -36,7 +43,7 @@ def main():
 
     # Create engine and transport
     engine = InterviewEngine()
-    transport = LocalMicTransport(scenario=args.scenario)
+    transport = LocalMicTransport(scenario=args.scenario, voice_config=args.voice)
 
     # Run
     try:

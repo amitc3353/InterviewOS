@@ -18,19 +18,20 @@ class LocalMicTransport(Transport):
     - Mic muted during TTS playback
     """
 
-    def __init__(self, scenario: str = "payments"):
+    def __init__(self, scenario: str = "payments", voice_config: str = "nova_hd"):
         """
         Initialize local mic transport.
 
         Args:
             scenario: Interview scenario
+            voice_config: TTS voice preset (alloy_hd, onyx_hd, nova_hd)
         """
         self.scenario = scenario
 
         # Adapters
         self.stt = STTAdapter()
         self.llm = LLMAdapter()
-        self.tts = TTSAdapter()
+        self.tts = TTSAdapter(voice_config=voice_config)
         self.audio_out = AudioOutAdapter()
 
         # State
@@ -38,6 +39,7 @@ class LocalMicTransport(Transport):
         self.stream = None
         self.current_partial = ""
         self.audio_chunks_sent = 0
+        self.engine: InterviewEngine | None = None  # Will be set in run()
 
         # Keyboard listener
         self.listener = None
@@ -49,6 +51,9 @@ class LocalMicTransport(Transport):
         Args:
             engine: InterviewEngine instance
         """
+        # Store engine reference
+        self.engine = engine
+
         print("\n🎤 InterviewOS - Voice Mode (Phase 1)")
         print("=" * 50)
         print(f"Scenario: {self.scenario}")
@@ -140,13 +145,16 @@ class LocalMicTransport(Transport):
         if not self.is_recording:
             return
 
-        print("\n⏹️  Processing...")
         self.is_recording = False
 
-        # Stop stream
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
+        # Stop stream (defensive cleanup)
+        try:
+            if self.stream:
+                self.stream.stop()
+                self.stream.close()
+        except Exception as e:
+            print(f"⚠️  Stream cleanup warning: {e}")
+        finally:
             self.stream = None
 
         # Get final transcript
@@ -162,7 +170,8 @@ class LocalMicTransport(Transport):
             print("❌ No speech detected. Try again.\n")
             return
 
-        print(f"\n📝 You said: {transcript}\n")
+        print(f"\n📝 You said: {transcript}")
+        print("\n⏹️  Processing...\n")
 
         # Process turn
         self._process_turn(transcript)
@@ -176,46 +185,69 @@ class LocalMicTransport(Transport):
 
     def _process_turn(self, transcript: str):
         """Process candidate's response and get next question."""
-        print("🤔 Interviewer is thinking...")
+        if not self.engine or not self.engine.session:
+            print("❌ Error: Engine not initialized")
+            return
 
-        # Mock engine call for now - will refactor to pass engine properly
-        # This is a quick implementation for Phase 1
-        context = {
-            "scenario": self.scenario,
-            "turn_count": 1,
-            "current_phase": "requirements_gathering",
-            "candidate_transcript": transcript,
-            "platform_context": "",
-            "history": [],
-        }
+        # Get context from engine (includes history, locked constraints, phase)
+        context = self.engine.process_turn(transcript)
 
+        # Call LLM with full context
         response = self.llm.get_next_question(context)
+
+        # Record turn in engine (updates history, locked constraints, phase)
+        self.engine.record_turn(transcript, response)
+
+        # Speak the question
         self._speak_question(response)
 
     def _speak_question(self, response: dict):
         """Synthesize and play interviewer's question."""
+        # Use interviewer_says for TTS (conversational), question is the actual probe
+        interviewer_says = response.get("interviewer_says", "")
         question = response.get("question", "")
+        constraint_summary = response.get("constraint_summary", "")
 
-        if not question:
+        # Build message (constraint summary replaces acknowledgment if present)
+        if constraint_summary:
+            full_message = f"{constraint_summary} {question}".strip()
+        else:
+            full_message = f"{interviewer_says} {question}".strip()
+
+        if not full_message:
             return
 
-        print(f"\n💬 Interviewer: {question}\n")
+        print(f"\n💬 Interviewer: {full_message}\n")
 
-        # Synthesize
-        print("🔊 Generating audio...")
-        audio_buffer = self.tts.synthesize(question)
-
-        # Play
-        print("▶️  Playing...\n")
+        # Synthesize and play
+        audio_buffer = self.tts.synthesize(full_message)
         self.audio_out.play(audio_buffer)
 
         print("✅ Ready! Press SPACEBAR to respond...\n")
 
     def _cleanup(self):
-        """Clean up resources."""
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
+        """Clean up resources with defensive shutdown."""
+        # Stop audio playback
+        try:
+            self.audio_out.stop()
+        except Exception as e:
+            print(f"⚠️  Audio stop warning: {e}")
 
-        if self.listener:
-            self.listener.stop()
+        # Stop mic stream
+        try:
+            if self.stream:
+                self.stream.stop()
+                self.stream.close()
+        except Exception as e:
+            print(f"⚠️  Stream cleanup warning: {e}")
+        finally:
+            self.stream = None
+
+        # Stop keyboard listener
+        try:
+            if self.listener:
+                self.listener.stop()
+        except Exception as e:
+            print(f"⚠️  Listener cleanup warning: {e}")
+        finally:
+            self.listener = None

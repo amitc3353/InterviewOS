@@ -17,11 +17,11 @@ class InterviewEngine:
     """
 
     SCENARIOS = {
-        "payments": "Let's design a payment processing system. Where would you like to start?",
-        "social_feed": "Today we'll design a social media feed. What's your approach?",
-        "e_commerce": "Let's build an e-commerce platform. How do you want to begin?",
-        "ride_sharing": "We're designing a ride-sharing system. Where should we start?",
-        "video_streaming": "Let's design a video streaming platform. What's your first step?",
+        "payments": "payment processing system",
+        "social_feed": "social media feed",
+        "e_commerce": "e-commerce platform",
+        "ride_sharing": "ride-sharing system",
+        "video_streaming": "video streaming platform",
     }
 
     def __init__(self):
@@ -36,7 +36,7 @@ class InterviewEngine:
             scenario: Interview scenario (payments, social_feed, etc.)
 
         Returns:
-            Opening question (structured)
+            Opening question (structured with Interview Protocol)
         """
         if scenario not in self.SCENARIOS:
             raise ValueError(
@@ -44,13 +44,16 @@ class InterviewEngine:
             )
 
         self.session = SessionState(scenario=scenario)
+        self.session.current_phase = "intro"
 
-        opening_question = self.SCENARIOS[scenario]
+        scenario_name = self.SCENARIOS[scenario]
 
         return {
-            "question": opening_question,
-            "intent": "Establish starting point and gauge requirements gathering approach",
-            "what_good_looks_like": "Candidate asks clarifying questions about scale, users, and key features",
+            "phase": "intro",
+            "interviewer_says": f"Hi! Today we're designing a {scenario_name}. We'll start with requirements, then architecture, dive deep on a component or two, and wrap with scaling. Sound good?",
+            "question": "Where would you like to start?",
+            "what_im_listening_for": "Does candidate ask clarifying questions or jump to solution?",
+            "followup_if_vague": "What questions do you have about the system's scope or scale?",
         }
 
     def process_turn(self, transcript: str) -> dict:
@@ -73,13 +76,14 @@ class InterviewEngine:
             "current_phase": self.session.current_phase,
             "candidate_transcript": transcript,
             "platform_context": PLATFORM_CONTEXT,
+            "locked_constraints": self.session.locked_constraints.to_prompt_text(),
             "history": [
                 {
                     "turn": t.turn_number,
                     "candidate": t.candidate_transcript,
                     "interviewer": t.interviewer_response.get("question", ""),
                 }
-                for t in self.session.turns[-3:]  # Last 3 turns for context
+                for t in self.session.turns[-20:]  # Last 20 turns for context
             ],
         }
 

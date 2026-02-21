@@ -85,7 +85,11 @@ Be honest but constructive. Use the scoring guide in the context.
 
     # Parse response
     try:
-        scores = json.loads(response.content[0].text)
+        content_block = response.content[0]
+        if hasattr(content_block, "text"):
+            scores = json.loads(content_block.text)
+        else:
+            raise RuntimeError("Unexpected response format from Claude")
     except json.JSONDecodeError:
         raise RuntimeError("Failed to parse scoring response from Claude")
 
