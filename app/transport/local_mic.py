@@ -155,6 +155,7 @@ class LocalMicTransport(Transport):
 
         # Get final transcript
         print(f"🎵 Total audio chunks sent: {self.audio_chunks_sent}")
+        self.audio_chunks_sent = 0  # Reset for next recording
 
         try:
             transcript = self.stt.stop_listening()
