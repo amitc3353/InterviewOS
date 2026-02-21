@@ -21,7 +21,7 @@ class SessionState:
 
     scenario: str
     turn_count: int = 0
-    current_phase: str = "requirements_gathering"
+    current_phase: str = "intro"
     turns: List[Turn] = field(default_factory=list)
     started_at: str = field(default_factory=lambda: datetime.now().isoformat())
 

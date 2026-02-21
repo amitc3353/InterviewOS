@@ -194,16 +194,21 @@ class LocalMicTransport(Transport):
 
     def _speak_question(self, response: dict):
         """Synthesize and play interviewer's question."""
+        # Use interviewer_says for TTS (conversational), question is the actual probe
+        interviewer_says = response.get("interviewer_says", "")
         question = response.get("question", "")
 
-        if not question:
+        # Combine for natural flow
+        full_message = f"{interviewer_says} {question}".strip()
+
+        if not full_message:
             return
 
-        print(f"\n💬 Interviewer: {question}\n")
+        print(f"\n💬 Interviewer: {full_message}\n")
 
         # Synthesize
         print("🔊 Generating audio...")
-        audio_buffer = self.tts.synthesize(question)
+        audio_buffer = self.tts.synthesize(full_message)
 
         # Play
         print("▶️  Playing...\n")
