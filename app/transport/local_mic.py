@@ -161,10 +161,14 @@ class LocalMicTransport(Transport):
         print("\n⏹️  Processing...")
         self.is_recording = False
 
-        # Stop stream
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
+        # Stop stream (defensive cleanup)
+        try:
+            if self.stream:
+                self.stream.stop()
+                self.stream.close()
+        except Exception as e:
+            print(f"⚠️  Stream cleanup warning: {e}")
+        finally:
             self.stream = None
 
         # Get final transcript
@@ -240,10 +244,28 @@ class LocalMicTransport(Transport):
         print("✅ Ready! Press SPACEBAR to respond...\n")
 
     def _cleanup(self):
-        """Clean up resources."""
-        if self.stream:
-            self.stream.stop()
-            self.stream.close()
+        """Clean up resources with defensive shutdown."""
+        # Stop audio playback
+        try:
+            self.audio_out.stop()
+        except Exception as e:
+            print(f"⚠️  Audio stop warning: {e}")
 
-        if self.listener:
-            self.listener.stop()
+        # Stop mic stream
+        try:
+            if self.stream:
+                self.stream.stop()
+                self.stream.close()
+        except Exception as e:
+            print(f"⚠️  Stream cleanup warning: {e}")
+        finally:
+            self.stream = None
+
+        # Stop keyboard listener
+        try:
+            if self.listener:
+                self.listener.stop()
+        except Exception as e:
+            print(f"⚠️  Listener cleanup warning: {e}")
+        finally:
+            self.listener = None
