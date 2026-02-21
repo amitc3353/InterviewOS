@@ -1,7 +1,6 @@
 """AI Interviewer using Claude (Anthropic API)."""
 
 import json
-from pathlib import Path
 from anthropic import Anthropic
 from app.config import Config
 
@@ -12,11 +11,11 @@ PLATFORM_CONTEXT = CONTEXT_FILE.read_text() if CONTEXT_FILE.exists() else ""
 
 class InterviewSession:
     """Manages an interview session state and AI interviewer responses."""
-    
+
     def __init__(self, scenario: str = "payments"):
         """
         Initialize interview session.
-        
+
         Args:
             scenario: Interview scenario (payments, social_feed, etc.)
         """
@@ -24,19 +23,19 @@ class InterviewSession:
         self.turn_count = 0
         self.history = []
         self.current_phase = "requirements_gathering"
-        
+
         if not Config.ANTHROPIC_API_KEY:
             raise ValueError("ANTHROPIC_API_KEY not set in .env")
-        
+
         self.client = Anthropic(api_key=Config.ANTHROPIC_API_KEY)
-    
+
     def next_question(self, candidate_input: str) -> dict:
         """
         Get next interviewer question based on candidate's response.
-        
+
         Args:
             candidate_input: Candidate's latest response
-            
+
         Returns:
             dict with keys:
                 - question: Next interviewer question
@@ -44,7 +43,7 @@ class InterviewSession:
                 - what_good_looks_like: Key points for strong answer
         """
         self.turn_count += 1
-        
+
         # Build prompt
         system_prompt = f"""You are an expert technical interviewer conducting a system design interview.
 
@@ -67,39 +66,43 @@ Output format (JSON):
   "what_good_looks_like": "Key points a strong candidate would cover"
 }}
 """
-        
-        user_message = f"Candidate's response:\n{candidate_input}\n\nWhat's your next question?"
-        
+
+        user_message = (
+            f"Candidate's response:\n{candidate_input}\n\nWhat's your next question?"
+        )
+
         # Call Claude
         response = self.client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-sonnet-4-5",
             max_tokens=1024,
             system=system_prompt,
-            messages=[
-                {"role": "user", "content": user_message}
-            ]
+            messages=[{"role": "user", "content": user_message}],
         )
-        
-        # Parse response
+
+        # Parse response (strip markdown code fences if present)
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         try:
-            result = json.loads(response.content[0].text)
+            result = json.loads(raw)
         except json.JSONDecodeError:
-            # Fallback if not valid JSON
             result = {
-                "question": response.content[0].text,
+                "question": raw,
                 "intent": "Follow-up question",
-                "what_good_looks_like": "Clear, structured thinking"
+                "what_good_looks_like": "Clear, structured thinking",
             }
-        
+
         # Update history
-        self.history.append({
-            "turn": self.turn_count,
-            "candidate": candidate_input,
-            "interviewer": result
-        })
-        
+        self.history.append(
+            {
+                "turn": self.turn_count,
+                "candidate": candidate_input,
+                "interviewer": result,
+            }
+        )
+
         return result
-    
+
     def start(self) -> dict:
         """Get opening question for the interview."""
         opening = {
@@ -107,13 +110,15 @@ Output format (JSON):
             "social_feed": "Today we'll design a social media feed. What's your approach?",
             "e_commerce": "Let's build an e-commerce platform. How do you want to begin?",
             "ride_sharing": "We're designing a ride-sharing system. Where should we start?",
-            "video_streaming": "Let's design a video streaming platform. What's your first step?"
+            "video_streaming": "Let's design a video streaming platform. What's your first step?",
         }
-        
-        question = opening.get(self.scenario, "Let's design a system. Where would you like to start?")
-        
+
+        question = opening.get(
+            self.scenario, "Let's design a system. Where would you like to start?"
+        )
+
         return {
             "question": question,
             "intent": "Establish starting point and gauge requirements gathering approach",
-            "what_good_looks_like": "Candidate asks clarifying questions about scale, users, and key features"
+            "what_good_looks_like": "Candidate asks clarifying questions about scale, users, and key features",
         }

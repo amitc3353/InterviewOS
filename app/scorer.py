@@ -13,10 +13,10 @@ PLATFORM_CONTEXT = CONTEXT_FILE.read_text() if CONTEXT_FILE.exists() else ""
 def score_interview(transcript_path: str) -> dict:
     """
     Score an interview transcript using the 5-dimension rubric.
-    
+
     Args:
         transcript_path: Path to transcript JSON file
-        
+
     Returns:
         dict with scoring results:
             - dimensions: scores for each dimension (0-10)
@@ -26,19 +26,19 @@ def score_interview(transcript_path: str) -> dict:
             - next_focus: recommendation for next practice session
     """
     transcript_file = Path(transcript_path)
-    
+
     if not transcript_file.exists():
         raise FileNotFoundError(f"Transcript not found: {transcript_path}")
-    
+
     if not Config.ANTHROPIC_API_KEY:
         raise ValueError("ANTHROPIC_API_KEY not set in .env")
-    
+
     # Load transcript
     with open(transcript_file) as f:
         transcript_data = json.load(f)
-    
+
     transcript_text = transcript_data.get("transcript", "")
-    
+
     # Build scoring prompt
     system_prompt = f"""You are an expert technical interviewer evaluating a system design interview.
 
@@ -68,51 +68,51 @@ Output format (JSON):
 
 Be honest but constructive. Use the scoring guide in the context.
 """
-    
-    user_message = f"Interview transcript:\n\n{transcript_text}\n\nProvide structured scoring."
-    
+
+    user_message = (
+        f"Interview transcript:\n\n{transcript_text}\n\nProvide structured scoring."
+    )
+
     # Call Claude for scoring
     client = Anthropic(api_key=Config.ANTHROPIC_API_KEY)
-    
+
     response = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
+        model="claude-sonnet-4-5",
         max_tokens=2048,
         system=system_prompt,
-        messages=[
-            {"role": "user", "content": user_message}
-        ]
+        messages=[{"role": "user", "content": user_message}],
     )
-    
+
     # Parse response
     try:
         scores = json.loads(response.content[0].text)
     except json.JSONDecodeError:
         raise RuntimeError("Failed to parse scoring response from Claude")
-    
+
     return scores
 
 
 def score_and_save(transcript_path: str) -> Path:
     """
     Score interview and save results to /scores folder.
-    
+
     Returns:
         Path to saved scores JSON
     """
     scores = score_interview(transcript_path)
-    
+
     # Generate output filename based on transcript
     transcript_name = Path(transcript_path).stem
     output_file = Config.SCORES_DIR / f"{transcript_name}_scores.json"
-    
+
     # Add metadata
     scores["metadata"] = {
         "transcript_file": str(transcript_path),
-        "scored_at": datetime.now().isoformat()
+        "scored_at": datetime.now().isoformat(),
     }
-    
+
     # Save
     with open(output_file, "w") as f:
         json.dump(scores, f, indent=2)
-    
+
     return output_file
