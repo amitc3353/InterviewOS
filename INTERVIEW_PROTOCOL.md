@@ -6,9 +6,9 @@ Every interviewer turn returns JSON with:
 
 ```json
 {
-  "phase": "intro|requirements|architecture|deep_dive|scale|tradeoffs|conclusion",
-  "interviewer_says": "Conversational 1-2 sentence response",
-  "question": "The actual question being asked",
+  "phase": "intro|scope|architecture|deep_dive|failure|tradeoffs|wrap",
+  "interviewer_says": "1-3 word acknowledgment (\"Got it.\", \"Hmm.\", \"Okay.\")",
+  "question": "One short question (5-10 words)",
   "what_im_listening_for": "Key signals you're evaluating",
   "followup_if_vague": "Specific question if answer is too high-level"
 }
