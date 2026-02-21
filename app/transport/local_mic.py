@@ -106,13 +106,11 @@ class LocalMicTransport(Transport):
         print("🎤 Recording... (release SPACEBAR to submit)")
         self.is_recording = True
         self.current_partial = ""
+        self.audio_chunks_sent = 0  # Reset counter
 
         # Start STT
         self.stt.on_partial(self._on_partial_transcript)
         self.stt.start_listening()
-
-        # Audio chunk counter for debugging
-        self.audio_chunks_sent = 0
 
         # Start audio stream
         def audio_callback(indata, frames, time, status):
