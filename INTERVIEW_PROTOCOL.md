@@ -14,15 +14,17 @@ Every interviewer turn returns JSON with:
 }
 ```
 
-## Interview Phases
+## Interview Phases (Momentum Flow)
 
 1. **intro** - Greeting + scenario context + interview format (1 turn)
-2. **requirements** - Clarify scope, scale, features (5-10 min)
+2. **scope** - Clarify requirements, scale, features (5-10 min)
 3. **architecture** - High-level design, components, data flow (10-15 min)
-4. **deep_dive** - Pick 1-2 critical components, go deep (10 min)
-5. **scale** - Bottlenecks, scaling strategies, performance (5-10 min)
-6. **tradeoffs** - Design decisions, alternatives, cost vs performance (5 min)
-7. **conclusion** - Wrap up, any final questions from candidate
+4. **deep_dive** - Pick 1-2 critical components, implementation details (10 min)
+5. **failure** - What breaks? Edge cases? Bottlenecks? (5-10 min)
+6. **tradeoffs** - Design decisions, alternatives, costs (5 min)
+7. **wrap** - Summarize, final questions from candidate
+
+Natural flow: scope → architecture → deep_dive → failure → tradeoffs → wrap
 
 ## Conversational Rules
 
