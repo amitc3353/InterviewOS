@@ -1,6 +1,5 @@
 """Local microphone transport - Phase 1 implementation."""
 
-import random
 import sounddevice as sd
 import numpy as np
 from pynput import keyboard
@@ -190,22 +189,8 @@ class LocalMicTransport(Transport):
             print("❌ Error: Engine not initialized")
             return
 
-        # LATENCY MASKING: Play thinking filler immediately
-        thinking_filler = random.choice(self.THINKING_FILLERS)
-        print(f"💭 {thinking_filler}")
-
-        # Synthesize and play filler while LLM is thinking
-        filler_audio = self.tts.synthesize(thinking_filler)
-        self.audio_out.play(filler_audio)
-
         # Get context from engine (includes history, locked constraints, phase)
         context = self.engine.process_turn(transcript)
-
-        # Debug logging
-        print(
-            f"[DEBUG] Turn: {context['turn_count']}, Phase: {context['current_phase']}"
-        )
-        print(f"[DEBUG] History length: {len(context['history'])}")
 
         # Call LLM with full context
         response = self.llm.get_next_question(context)
