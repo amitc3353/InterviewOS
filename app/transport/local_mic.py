@@ -1,5 +1,6 @@
 """Local microphone transport - Phase 1 implementation."""
 
+import random
 import sounddevice as sd
 import numpy as np
 from pynput import keyboard
@@ -17,6 +18,22 @@ class LocalMicTransport(Transport):
     - Release SPACEBAR to submit
     - Mic muted during TTS playback
     """
+
+    # Natural thinking fillers (latency masking)
+    THINKING_FILLERS = [
+        "Hmm...",
+        "Let me think...",
+        "Good question...",
+        "Okay...",
+        "Right...",
+        "Interesting...",
+        "Let me see...",
+        "One sec...",
+        "Alright...",
+        "Got it...",
+        "Mm-hmm...",
+        "Sure...",
+    ]
 
     def __init__(self, scenario: str = "payments"):
         """
@@ -176,10 +193,15 @@ class LocalMicTransport(Transport):
 
     def _process_turn(self, transcript: str):
         """Process candidate's response and get next question."""
-        print("🤔 Interviewer is thinking...")
+        # LATENCY MASKING: Play thinking filler immediately
+        thinking_filler = random.choice(self.THINKING_FILLERS)
+        print(f"💭 {thinking_filler}")
 
-        # Mock engine call for now - will refactor to pass engine properly
-        # This is a quick implementation for Phase 1
+        # Synthesize and play filler while LLM is thinking
+        filler_audio = self.tts.synthesize(thinking_filler)
+        self.audio_out.play(filler_audio)
+
+        # Now call LLM (user hears the filler, not awkward silence)
         context = {
             "scenario": self.scenario,
             "turn_count": 1,
