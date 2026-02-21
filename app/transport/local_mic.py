@@ -206,9 +206,13 @@ class LocalMicTransport(Transport):
         # Use interviewer_says for TTS (conversational), question is the actual probe
         interviewer_says = response.get("interviewer_says", "")
         question = response.get("question", "")
+        constraint_summary = response.get("constraint_summary", "")
 
-        # Combine for natural flow
-        full_message = f"{interviewer_says} {question}".strip()
+        # Build message (constraint summary replaces acknowledgment if present)
+        if constraint_summary:
+            full_message = f"{constraint_summary} {question}".strip()
+        else:
+            full_message = f"{interviewer_says} {question}".strip()
 
         if not full_message:
             return
