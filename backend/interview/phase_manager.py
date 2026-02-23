@@ -546,7 +546,20 @@ Show you're listening and connecting the dots. Don't treat each turn as isolated
     
     def _get_response_format(self) -> str:
         """Get JSON response format with examples."""
-        return """**RESPONSE FORMAT** (strict JSON):
+        return """**BEFORE RESPONDING — CHECK THE CANDIDATE'S LAST MESSAGE**:
+Did the candidate ask a question? If yes, categorize it:
+
+1. **Validation-seeking** ("Right?", "Does that make sense?", "Am I close?", "Is that too much?", "Am I way off?", "I hope that's not too slow"):
+   → DO NOT answer. Use one of: "That's your call.", "Keep going.", "Why do you think so?", or just ignore it and ask your next question.
+
+2. **Genuine clarifying question** ("Should I assume X?", "Are we targeting Y?", "How many users?"):
+   → Answer in ONE short sentence, then redirect: "Assume global. How does that change things?"
+
+3. **Not a question** → Proceed normally.
+
+You MUST address the candidate's question (or deliberately deflect it) BEFORE asking your own question. Never ignore it entirely — that feels robotic and disconnected.
+
+**RESPONSE FORMAT** (strict JSON):
 ```json
 {
   "phase": "current_phase_or_next_phase",
