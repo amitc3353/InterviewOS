@@ -125,9 +125,16 @@ Keep your responses concise and conversational. Listen carefully to the candidat
         
         # Buffer the entire LLM response to parse JSON before streaming
         # This prevents raw JSON from leaking to the user
+        # Trade-off: Removes streaming behavior but ensures clean output
         full_response = ""
+        last_chunk_id = "parsed_response"  # Track last chunk ID explicitly
+        
         async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
-            # Accumulate chunks
+            # Track chunk ID for later use
+            if chunk.id:
+                last_chunk_id = chunk.id
+            
+            # Accumulate text content only (interviews don't use tool calls)
             if chunk.delta and chunk.delta.content:
                 full_response += chunk.delta.content
         
@@ -162,9 +169,9 @@ Keep your responses concise and conversational. Listen carefully to the candidat
                    f"Constraints={len(self.interview_session.state.locked_constraints)}")
         
         # Yield ONLY the clean spoken text (no JSON, no internal fields)
-        # Create a new chunk with only the spoken text
+        # Use explicitly tracked chunk ID
         yield llm.ChatChunk(
-            id=chunk.id if 'chunk' in locals() else "parsed_response",
+            id=last_chunk_id,
             delta=llm.ChoiceDelta(
                 role="assistant",
                 content=spoken_text
