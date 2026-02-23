@@ -1,0 +1,17 @@
+# LiveKit Agents framework
+livekit>=0.17.0
+livekit-agents>=0.9.0
+
+# LiveKit plugins
+livekit-plugins-deepgram>=0.6.0
+livekit-plugins-openai>=0.7.0
+livekit-plugins-silero>=0.6.0
+livekit-plugins-anthropic>=0.1.0
+
+# Environment and utilities
+python-dotenv>=1.0.0
+
+# For future use
+# fastapi>=0.109.0  # Web API (later)
+# uvicorn>=0.27.0   # ASGI server (later)
+# postgresql>=0.1.0 # Database (later)
