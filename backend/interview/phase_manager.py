@@ -219,7 +219,9 @@ The pattern should be UNPREDICTABLE. If you've done acknowledgment+question for 
             InterviewPhase.INTRO: """**INTRO PHASE** (1 turn):
 - Greet candidate warmly but professionally
 - Present the problem statement clearly
-- Explain interview format (45 min, clarify requirements → design → deep-dive → failure → tradeoffs)
+- Briefly mention the time (45 min) and that you'll start by scoping the problem then design together
+- Do NOT list all phases — a real interviewer wouldn't enumerate "deep-dive, failure, tradeoffs"
+- Keep it natural: "We've got 45 minutes. Let's start by understanding the problem, then we'll design it."
 - Ask if they have initial clarifying questions
 - Keep it brief (one turn)
 """,
