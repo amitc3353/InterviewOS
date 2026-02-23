@@ -113,8 +113,14 @@ class ResponseParser:
             for line in clean_text.split("\n"):
                 line = line.strip()
                 
-                # Skip JSON structure lines
-                if line.startswith(("{", "}", '"phase":', '"update_locked_constraints":', '"what_im_listening_for":', '"followup_if_vague":')):
+                # Skip JSON structure and ALL internal-only fields
+                skip_prefixes = (
+                    "{", "}", "[", "]", "```",
+                    '"phase"', '"update_locked_constraints"',
+                    '"what_im_listening_for"', '"followup_if_vague"',
+                    '"constraint_summary"',
+                )
+                if any(line.startswith(p) for p in skip_prefixes):
                     continue
                 
                 # Extract quoted values
