@@ -605,23 +605,14 @@ Show you're listening and connecting the dots. Don't treat each turn as isolated
         if current_phase == InterviewPhase.SCOPE and requested_phase == InterviewPhase.ARCHITECTURE:
             return self.should_transition_scope_to_architecture(state)
         
-        # For other transitions, check minimum turn count + time
+        # For other transitions, check minimum turn count
+        # Time is a soft guideline, not a gate - real interviews naturally
+        # take the right amount of time because conversation takes time
         min_turns = 2  # At least 2 turns in any phase before moving
         if state.phase_turn_count < min_turns:
             return False
         
-        # Check if we've exceeded phase duration (soft guideline)
-        phase_duration = self.PHASE_DURATIONS.get(current_phase, float('inf'))
-        elapsed = state.phase_elapsed_seconds()
-        
-        # Allow transition if:
-        # - Enough turns have happened AND
-        # - We're past minimum time OR well past target duration
-        if state.phase_turn_count >= min_turns:
-            if elapsed > (phase_duration * 0.5):  # At least halfway through phase duration
-                return True
-        
-        return False
+        return True
     
     def get_next_phase(self, current_phase: InterviewPhase) -> InterviewPhase:
         """Get next phase in sequence."""
