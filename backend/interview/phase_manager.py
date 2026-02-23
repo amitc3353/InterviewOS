@@ -28,7 +28,7 @@ class PhaseManager:
         phase_instructions = self._get_phase_instructions(state.phase)
         locked_constraints = self._get_locked_constraints_context(state.locked_constraints)
         recent_history = self._get_recent_history_context(state.get_recent_history())
-        response_format = self._get_response_format(state.phase)
+        response_format = self._get_response_format()
         
         return f"""{base_behavior}
 
@@ -219,7 +219,7 @@ Example: If "scale_tps: 10000" is locked, ask "How will you handle 10k TPS spike
 Use this to remember what was already discussed and avoid repeating questions.
 """
     
-    def _get_response_format(self, phase: str) -> str:
+    def _get_response_format(self) -> str:
         """Get JSON response format with examples."""
         return """**RESPONSE FORMAT** (strict JSON):
 ```json

@@ -59,9 +59,10 @@ class InterviewAgent(Agent):
     
     async def llm_node(
         self,
-        *,
         chat_ctx: llm.ChatContext,
-    ) -> AsyncIterable[str | llm.ChatChunk]:
+        tools: list[llm.Tool],
+        model_settings: agents.ModelSettings,
+    ):
         """
         Custom LLM node - modifies chat context before LLM inference.
         
@@ -96,14 +97,14 @@ class InterviewAgent(Agent):
         logger.debug(f"LLM node - Phase: {self.session.state.phase.value}, Turn: {self.session.state.phase_turn_count}")
         
         # Use default LLM implementation
-        async for chunk in Agent.default.llm_node(self, chat_ctx=chat_ctx):
+        async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
             yield chunk
     
     async def tts_node(
         self,
-        *,
-        text_stream: AsyncIterable[str],
-    ) -> AsyncIterable[str]:
+        text: AsyncIterable[str],
+        model_settings: agents.ModelSettings,
+    ):
         """
         Custom TTS node - processes LLM output before speech synthesis.
         
@@ -115,7 +116,7 @@ class InterviewAgent(Agent):
         """
         # Collect full response from LLM
         full_response = ""
-        async for text_chunk in text_stream:
+        async for text_chunk in text:
             full_response += text_chunk
         
         logger.debug(f"Raw LLM response: {full_response[:200]}...")
@@ -153,8 +154,13 @@ class InterviewAgent(Agent):
                    f"Turn={self.session.state.phase_turn_count}, "
                    f"Constraints={len(self.session.state.locked_constraints)}")
         
-        # Yield spoken text for TTS
-        yield spoken_text
+        # Create async generator from spoken text and pass to default TTS
+        async def text_stream():
+            yield spoken_text
+        
+        # Use default TTS implementation
+        async for audio_frame in Agent.default.tts_node(self, text_stream(), model_settings):
+            yield audio_frame
 
 
 async def entrypoint(ctx: JobContext):
@@ -170,7 +176,12 @@ async def entrypoint(ctx: JobContext):
     config = AgentConfig.from_env()
     
     # Get scenario from job metadata or use default
-    scenario = ctx.job.metadata.get("scenario", "Design a URL shortener")
+    # Note: metadata is a string, not a dict - parse safely
+    scenario = "Design a URL shortener"
+    if hasattr(ctx.job, 'metadata') and ctx.job.metadata:
+        # Metadata is a string - use it directly if it looks like a scenario
+        if isinstance(ctx.job.metadata, str) and len(ctx.job.metadata) > 5:
+            scenario = ctx.job.metadata
     
     # Create interview agent
     interview_agent = InterviewAgent(config, scenario)
@@ -195,12 +206,6 @@ async def entrypoint(ctx: JobContext):
         vad=silero.VAD.load(
             min_silence_duration=config.silence_threshold_ms / 1000.0,
             min_speech_duration=0.2,  # 200ms minimum speech
-        ),
-        
-        # Turn detection
-        turn_detection=agents.TurnDetection(
-            enable_speech_to_text=True,
-            enable_interruption=True,
         ),
         
         # Chat context
