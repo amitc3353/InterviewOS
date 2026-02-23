@@ -37,6 +37,8 @@ class PhaseManager:
 **CURRENT PHASE**: {state.phase.value}
 **PHASE TURN COUNT**: {state.phase_turn_count}
 **TOTAL TURNS**: {state.total_turn_count}
+**SESSION ELAPSED**: {int(state.elapsed_seconds() / 60)} minutes
+**PHASE ELAPSED**: {int(state.phase_elapsed_seconds() / 60)} minutes
 
 {phase_instructions}
 
