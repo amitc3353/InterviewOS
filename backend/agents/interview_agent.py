@@ -124,9 +124,14 @@ class InterviewAgent(Agent):
             if chunk.id:
                 last_chunk_id = chunk.id
             
-            # Accumulate text content only (interviews don't use tool calls)
+            # Buffer assistant text to parse before sending to TTS
             if chunk.delta and chunk.delta.content:
                 full_response += chunk.delta.content
+                continue
+            
+            # Preserve non-text deltas (tool calls, control frames) for framework compatibility
+            # Interviews don't currently use tools, but this ensures robustness
+            yield chunk
         
         # Parse the complete response
         spoken_text, new_phase, updated_constraints = self.response_parser.parse(full_response)
@@ -149,6 +154,13 @@ class InterviewAgent(Agent):
                     logger.debug(f"Phase transition not ready: {self.interview_session.state.phase.value} -> {new_phase}")
             except ValueError:
                 logger.warning(f"Invalid phase in response: {new_phase}")
+        
+        # Guard against empty/whitespace output (prevent empty TTS)
+        spoken_text = (spoken_text or "").strip()
+        
+        if not spoken_text:
+            logger.warning("Parser returned empty spoken text - skipping assistant turn")
+            return
         
         # Record assistant message with clean spoken text
         self.interview_session.state.add_message("assistant", spoken_text)
