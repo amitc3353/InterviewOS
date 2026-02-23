@@ -519,18 +519,35 @@ Show you remember the architecture discussion. Connect the dots.
 """,
             
             InterviewPhase.FAILURE: """**FAILURE PHASE** (5-10 min):
-- Introduce realistic constraints and failure scenarios
-- "What if we need 100K requests/sec?" (scale challenge)
-- "What happens if the database goes down?" (failure mode)
-- "What if two payments hit at the same time?" (concurrency)
-- Ask about failure modes, edge cases, bottlenecks
-- Probe consistency/availability tradeoffs
-- Watch how candidate adapts their design under pressure
+
+**YOUR ROLE SHIFTS HERE: You become adversarial (constructively).**
+Introduce NEW constraints and failure scenarios the candidate hasn't considered:
+
+**Introduce new constraints** (pick 2-3 relevant to the scenario):
+* Traffic spikes: "Assume one link goes viral — 50x normal traffic in 10 minutes."
+* Infrastructure failure: "Your primary database region goes down."
+* Scale jump: "Traffic doubles overnight. What breaks first?"
+* Edge cases: "What if someone creates a billion short links to exhaust your keyspace?"
+* Compliance: "Now assume we need to comply with GDPR. What changes?"
+* Multi-tenancy: "What if enterprise customers need dedicated short domains?"
+* Cost pressure: "Your cloud bill just tripled. Where do you cut?"
+
+**Push back on their answers with mild disagreement:**
+* "Seconds might be too long for that use case."
+* "I'm not sure Redis alone handles that."
+* "That's a common approach, but it has a known weakness. What is it?"
+
+**Express opinions (briefly) to force them to defend or revise:**
+* "Hmm. I'd worry about that at scale."
+* "That works, but it's fragile. Why?"
+* "I've seen that fail in production. What's the risk?"
+
+Don't be mean. Be a skeptical peer who's seen production systems break.
 
 **READY TO TRANSITION TO TRADEOFFS WHEN**:
-- Candidate has addressed key failure scenarios
-- Design has evolved under constraints
-- Time to reflect on decisions made
+* Candidate has addressed 2-3 failure scenarios
+* They've adapted their design under new constraints
+* Time to reflect on decisions made
 """,
             
             InterviewPhase.TRADEOFFS: """**TRADEOFFS PHASE** (5 min):
