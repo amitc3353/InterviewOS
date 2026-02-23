@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from typing import Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,56 @@ class ResponseParser:
         
         return " ".join(parts).strip()
     
+    def _extract_fields_regex(self, raw_response: str) -> Optional[Tuple[str, Optional[str], Optional[Dict[str, str]]]]:
+        """Try to extract key fields using regex when JSON is malformed."""
+        phase = None
+        interviewer_says = ""
+        question = ""
+        constraint_summary = ""
+        
+        # Extract phase
+        phase_match = re.search(r'"phase"\s*:\s*"([^"]+)"', raw_response)
+        if phase_match:
+            phase = phase_match.group(1)
+        
+        # Extract interviewer_says
+        says_match = re.search(r'"interviewer_says"\s*:\s*"([^"]*)"', raw_response)
+        if says_match:
+            interviewer_says = says_match.group(1)
+        
+        # Extract question
+        q_match = re.search(r'"question"\s*:\s*"([^"]*)"', raw_response)
+        if q_match:
+            question = q_match.group(1)
+        
+        # Extract constraint_summary
+        summary_match = re.search(r'"constraint_summary"\s*:\s*"([^"]*)"', raw_response)
+        if summary_match:
+            constraint_summary = summary_match.group(1)
+        
+        # Extract constraints
+        constraints = None
+        constraint_match = re.search(r'"update_locked_constraints"\s*:\s*(\{[^}]+\})', raw_response)
+        if constraint_match:
+            try:
+                constraints = json.loads(constraint_match.group(1))
+            except json.JSONDecodeError:
+                pass
+        
+        # Only return if we got at least a question or acknowledgment
+        if question or interviewer_says or constraint_summary:
+            parts = []
+            if constraint_summary:
+                parts.append(constraint_summary)
+            elif interviewer_says:
+                parts.append(interviewer_says)
+            if question:
+                parts.append(question)
+            spoken_text = " ".join(parts)
+            return spoken_text, phase, constraints
+        
+        return None
+    
     def _fallback_parse(self, raw_response: str) -> Tuple[str, None, None]:
         """
         Fallback when JSON parsing fails.
@@ -93,6 +144,12 @@ class ResponseParser:
                 
             except (ValueError, json.JSONDecodeError) as e:
                 logger.warning(f"Markdown JSON extraction failed: {e}")
+        
+        # Try regex extraction for malformed JSON
+        regex_result = self._extract_fields_regex(raw_response)
+        if regex_result:
+            logger.info("Recovered fields via regex extraction")
+            return regex_result
         
         # Last resort: use raw text, strip any JSON artifacts
         clean_text = self._clean_raw_text(raw_response)
