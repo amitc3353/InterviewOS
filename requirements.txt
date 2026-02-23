@@ -1,8 +1,17 @@
+# LiveKit Agents framework (1.0+)
+livekit>=1.0.0
+livekit-agents>=1.0.0
+
+# LiveKit plugins
+livekit-plugins-deepgram>=0.6.0
+livekit-plugins-openai>=0.7.0
+livekit-plugins-silero>=0.6.0
+livekit-plugins-anthropic>=0.1.0
+
+# Environment and utilities
 python-dotenv>=1.0.0
-anthropic>=0.18.0
-openai>=1.12.0
-deepgram-sdk>=3.0.0,<4.0.0
-sounddevice>=0.4.6
-soundfile>=0.12.1
-pynput>=1.7.6
-numpy>=1.24.0
+
+# For future use
+# fastapi>=0.109.0  # Web API (later)
+# uvicorn>=0.27.0   # ASGI server (later)
+# psycopg2-binary>=2.9.0  # PostgreSQL (later)

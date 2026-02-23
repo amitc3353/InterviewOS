@@ -1,127 +1,185 @@
 # InterviewOS
 
-AI-powered system design interview practice platform.
+Voice-based AI interview simulator for Staff-level (L5→L6) system design interviews.
 
-## Setup
+## What is this?
 
-1. Copy `.env.example` to `.env` and add your API keys
-2. Install dependencies:
-   ```bash
-   pip3 install -r requirements.txt
-   ```
+InterviewOS is a real-time voice interview platform that helps senior engineers practice system design interviews with AI-powered interviewers. Unlike generic ChatGPT sessions, InterviewOS provides:
 
-## Modes
+- **Structured phases** - Intro → Exploration → Constraints → Depth → Closing
+- **Realistic probing** - AI asks follow-up questions like a real Staff engineer
+- **Locked constraints** - Tracks your architectural decisions
+- **Natural conversation** - No push-to-talk, just speak naturally
+- **Low latency** - <2s response time for realistic flow
 
-### 🎤 Real-Time Voice Mode (NEW - Phase 1)
-Interactive push-to-talk voice interview:
+## Quick Start
+
+### 1. Clone and Setup
+
 ```bash
-python3 -m app.realtime --scenario payments
+git clone <repo>
+cd InterviewOS
 ```
 
-**Controls:**
-- **SPACEBAR (hold)** - Talk
-- **SPACEBAR (release)** - Submit your response
-- **ESC** - Exit interview
+### 2. Install Dependencies
 
-**Flow:**
-1. Interviewer asks opening question (plays audio)
-2. Press and hold SPACEBAR while speaking
-3. Release SPACEBAR to submit
-4. Interviewer responds with follow-up (audio)
-5. Repeat
-
-Half-duplex: microphone muted during TTS playback.
-
----
-
-## CLI Mode (Batch Processing)
-
-### Usage
-
-### STT (Speech-to-Text)
-Transcribe audio files to text:
 ```bash
-python3 -m app stt --file path/to/audio.wav
+pip install -r requirements.txt
 ```
 
-Output: saves transcript JSON to `/transcripts`
+### 3. Configure Environment
 
-### Interview Loop
-Get AI interviewer questions:
+Copy `.env.example` to `.env`:
+
 ```bash
-# Opening question
-python3 -m app interview --scenario payments --start
-
-# Follow-up based on your response
-python3 -m app interview --scenario payments --input "I would start by..."
-
-# Verbose mode (shows intent + tips)
-python3 -m app interview --scenario payments --input "..." --verbose
+cp .env.example .env
 ```
 
-Scenarios: `payments`, `social_feed`, `e_commerce`, `ride_sharing`, `video_streaming`
+Fill in your API keys in `.env`:
+- **LiveKit**: Sign up at [livekit.io](https://livekit.io) (free tier)
+- **Deepgram**: Sign up at [deepgram.com](https://deepgram.com) ($200 free credits)
+- **Anthropic**: Your existing Claude API key
+- **OpenAI**: Your existing OpenAI API key
 
-### TTS (Text-to-Speech)
-Generate audio from text:
+### 4. Test Setup
+
 ```bash
-python3 -m app tts --text "Can you explain your approach?"
+python backend/test_setup.py
 ```
 
-Output: saves MP3 to `/audio`
+Should show all green checkmarks ✓
 
-### Scoring
-Evaluate interview performance:
+### 5. Run Interview
+
 ```bash
-python3 -m app score --transcript transcripts/20260221_095500.json
+python backend/run_interview.py
 ```
 
-Output: 
-- 5 dimensions scored 0-10 each (total out of 50)
-- 2 strengths, 2 improvements
-- Next focus recommendation
-- Saves to `/scores`
+Or with a custom scenario:
 
-## Workflow
+```bash
+python backend/run_interview.py "Design a payment gateway"
+```
 
-1. **Practice session**: Use `interview` to get questions, respond verbally
-2. **Record your responses** (audio)
-3. **Transcribe**: `stt --file your-response.wav`
-4. **Score**: `score --transcript transcripts/xyz.json`
-5. **Review feedback** and iterate
+### 6. Connect and Interview
+
+Connect via LiveKit client (web or mobile) and start speaking!
+
+## Project Structure
+
+```
+InterviewOS/
+├── backend/
+│   ├── agents/              # LiveKit agent
+│   │   └── interview_agent.py
+│   ├── adapters/            # STT/LLM/TTS adapters (modular)
+│   ├── interview/           # Interview logic
+│   │   ├── phase_manager.py       # Phase transitions & prompts
+│   │   └── response_parser.py     # JSON parsing with fallback
+│   ├── models/              # Data models
+│   │   └── session.py
+│   ├── utils/
+│   ├── config.py            # Configuration
+│   ├── run_interview.py     # Entry point
+│   └── test_setup.py        # Setup verification
+├── .env.example             # Environment template
+├── requirements.txt         # Python dependencies
+└── README.md               # This file
+```
 
 ## Architecture
 
-**Modular design for easy transport swapping (Phase 1 → Phase 2)**
-
 ```
-app/
-  engine/              # Core business logic (phase-independent)
-    interview_engine.py  - Session state machine
-    session.py          - Session state management
-  
-  adapters/            # Service adapters (swappable)
-    stt_adapter.py      - Deepgram streaming STT
-    llm_adapter.py      - Claude interviewer
-    tts_adapter.py      - OpenAI TTS
-    audio_out_adapter.py - sounddevice playback
-  
-  transport/           # Transport layer (swappable)
-    local_mic.py        - Phase 1: Push-to-talk local mic
-    daily.py            - Phase 2: Daily.co WebRTC (future)
-  
-  realtime.py          - Voice mode entry point
-  cli.py               - Batch CLI commands
+User (mic)
+    ↓
+LiveKit WebRTC
+    ↓
+Silero VAD (voice activity detection)
+    ↓
+Deepgram STT (speech-to-text)
+    ↓
+Interview Engine
+  - Phase Manager (tracks current phase, builds prompts)
+  - Session State (locked constraints, history)
+    ↓
+Claude Sonnet (interviewer brain)
+    ↓
+Response Parser (JSON → spoken text + state updates)
+    ↓
+OpenAI TTS (text-to-speech)
+    ↓
+LiveKit WebRTC
+    ↓
+User (speaker)
 ```
 
-See `ARCHITECTURE.md` for full design principles and contracts.
+### Modular Design
 
-**Legacy modules (still functional):**
-- `app/stt.py` - Batch Deepgram STT
-- `app/tts.py` - Batch Deepgram TTS  
-- `app/interviewer.py` - Batch Claude interviewer
-- `app/scorer.py` - Claude rubric scoring
+All components are swappable:
+- **STT**: Deepgram (default) → Whisper (future)
+- **LLM**: Claude (default) → GPT-4 (future)
+- **TTS**: OpenAI (default) → Cartesia (future)
 
-## Requirements
+Change providers in `backend/config.py` - no code changes needed.
 
-- Python 3.8+
-- API keys: Anthropic (Claude), OpenAI (TTS), Deepgram (STT), Daily.co (Phase 2)
+## How It Works
+
+### Interview Phases
+
+1. **Intro (2 min)** - Problem statement, clarifying questions
+2. **Exploration (10 min)** - High-level architecture
+3. **Constraints (10 min)** - Scale, latency, failure modes
+4. **Depth (15 min)** - Deep-dive on specific components
+5. **Closing (8 min)** - Summary, tradeoffs, operational concerns
+
+Phases transition automatically based on elapsed time.
+
+### Locked Constraints
+
+The AI tracks your architectural decisions:
+- "We'll use PostgreSQL for transactions"
+- "Cache TTL is 5 minutes"
+- "We're designing for 100K requests/sec"
+
+Once locked, you must work within these constraints (like a real interview).
+
+### Turn-Taking
+
+Uses **two-layer detection**:
+1. **Silero VAD** - Detects when you start/stop speaking
+2. **Semantic Turn Detection** - Distinguishes "thinking pause" from "done talking"
+
+Result: Natural conversation without awkward pauses or false triggers.
+
+## Cost
+
+Approximately **$0.43 per 45-minute session**:
+
+| Component | Cost |
+|-----------|------|
+| LiveKit | Free tier |
+| Deepgram STT | $0.35 |
+| Claude Sonnet | $0.03 |
+| OpenAI TTS | $0.05 |
+
+Compare to human mock interviews: $200-400/session.
+
+## Development
+
+See `backend/README.md` for detailed architecture, hooks, and development guide.
+
+## Roadmap
+
+- [x] Real-time voice pipeline
+- [x] Phase management
+- [x] Locked constraints tracking
+- [ ] Session recording
+- [ ] Web frontend
+- [ ] Scoring rubric
+- [ ] Multiple scenarios (15 total)
+- [ ] Session replay
+- [ ] Analytics dashboard
+
+## Support
+
+For issues or questions, check `backend/README.md` troubleshooting section.

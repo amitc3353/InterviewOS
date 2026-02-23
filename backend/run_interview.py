@@ -1,0 +1,63 @@
+"""Run an interview agent."""
+
+import logging
+import sys
+from pathlib import Path
+
+# Add parent directory to path so we can import backend modules
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from dotenv import load_dotenv
+
+from backend.config import AgentConfig
+from backend.agents.interview_agent import entrypoint  # Phased interview agent
+from livekit.agents import WorkerOptions, cli
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+logger = logging.getLogger(__name__)
+
+
+def main():
+    """Main entry point."""
+    # Load configuration
+    config = AgentConfig.from_env()
+    
+    # Validate configuration
+    if not config.validate():
+        logger.error("Invalid configuration. Please check your .env file.")
+        logger.error("Required: LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, "
+                    "DEEPGRAM_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY")
+        sys.exit(1)
+    
+    logger.info("=" * 80)
+    logger.info(f"Starting InterviewOS Agent")
+    logger.info(f"LiveKit URL: {config.livekit_url}")
+    logger.info(f"LLM Model: {config.llm_model}")
+    logger.info(f"TTS Voice: {config.tts_voice}")
+    logger.info(f"VAD Sensitivity: {config.vad_sensitivity}")
+    logger.info(f"Silence Threshold: {config.silence_threshold_ms}ms")
+    logger.info("=" * 80)
+    logger.info("Note: Scenario is passed via LiveKit room metadata when creating the room")
+    
+    # Create worker options with entrypoint
+    worker_opts = WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        ws_url=config.livekit_url,
+        api_key=config.livekit_api_key,
+        api_secret=config.livekit_api_secret,
+    )
+    
+    # Run agent server (use 'start' or 'dev' subcommand)
+    cli.run_app(worker_opts)
+
+
+if __name__ == "__main__":
+    main()
