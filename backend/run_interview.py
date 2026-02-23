@@ -10,7 +10,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 
 from backend.config import AgentConfig
-from backend.agents.interview_agent import run_agent
+from backend.agents.interview_agent import entrypoint  # Phased interview agent
+from livekit.agents import WorkerOptions, cli
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -23,9 +27,6 @@ logger = logging.getLogger(__name__)
 
 def main():
     """Main entry point."""
-    # Load environment variables
-    load_dotenv()
-    
     # Load configuration
     config = AgentConfig.from_env()
     
@@ -36,29 +37,26 @@ def main():
                     "DEEPGRAM_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY")
         sys.exit(1)
     
-    # Get scenario from command line or use default
-    scenario = "Design a URL shortener"
-    if len(sys.argv) > 1:
-        scenario = " ".join(sys.argv[1:])  # Join all args as scenario
-    
     logger.info("=" * 80)
     logger.info(f"Starting InterviewOS Agent")
-    logger.info(f"Scenario: {scenario}")
     logger.info(f"LiveKit URL: {config.livekit_url}")
     logger.info(f"LLM Model: {config.llm_model}")
     logger.info(f"TTS Voice: {config.tts_voice}")
     logger.info(f"VAD Sensitivity: {config.vad_sensitivity}")
     logger.info(f"Silence Threshold: {config.silence_threshold_ms}ms")
     logger.info("=" * 80)
+    logger.info("Note: Scenario is passed via LiveKit room metadata when creating the room")
     
-    # Run the agent
-    try:
-        run_agent(config, scenario)
-    except KeyboardInterrupt:
-        logger.info("Agent stopped by user")
-    except Exception as e:
-        logger.error(f"Agent error: {e}", exc_info=True)
-        sys.exit(1)
+    # Create worker options with entrypoint
+    worker_opts = WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        ws_url=config.livekit_url,
+        api_key=config.livekit_api_key,
+        api_secret=config.livekit_api_secret,
+    )
+    
+    # Run agent server (use 'start' or 'dev' subcommand)
+    cli.run_app(worker_opts)
 
 
 if __name__ == "__main__":
