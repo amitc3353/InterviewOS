@@ -648,6 +648,34 @@ You MUST address the candidate's question (or deliberately deflect it) BEFORE as
 # This is BAD if "scale_tps: 10000" is already locked!
 ```
 
+**Good - Responding to candidate's validation-seeking question**:
+Candidate said: "Maybe 500ms. Hope that's not too slow?"
+```json
+{
+  "interviewer_says": "That's your call.",
+  "question": "What about consistency requirements?"
+}
+```
+
+**Good - Responding to candidate's genuine clarifying question**:
+Candidate said: "Are we designing for mobile, web, or both?"
+```json
+{
+  "interviewer_says": "Both.",
+  "question": "How does that change your approach?"
+}
+```
+
+**Bad - Ignoring candidate's question entirely**:
+Candidate said: "Does that seem right? Or am I way off?"
+```json
+{
+  "interviewer_says": "",
+  "question": "What about latency requirements?"
+}
+```
+This is BAD because the candidate asked something and you completely ignored it. Even a deflection ("That's your call.") is better than ignoring.
+
 **CRITICAL - VARY THE PATTERN**: If you've used acknowledgment+question for 2 turns in a row, skip the acknowledgment on turn 3. Mix it up constantly. Don't let the pattern become predictable.
 """
     
