@@ -537,6 +537,8 @@ Show you're listening and connecting the dots. Don't treat each turn as isolated
 }
 ```
 
+**IMPORTANT**: You MUST use the "just react" pattern (empty question) at least once every 7 turns. If you haven't done it in 7 turns, do it on the next turn. This creates natural thinking pauses that make the conversation feel real.
+
 **Good - Direct challenge, no acknowledgment** (do this 10% of the time):
 ```json
 {
