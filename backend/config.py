@@ -20,6 +20,9 @@ class AgentConfig:
     openai_api_key: str
     
     # Model configuration
+    # NOTE: stt_provider, llm_provider, tts_provider are currently decorative
+    # Actual providers are hardcoded in interview_agent.py
+    # TODO: Wire these to actually switch providers
     stt_provider: str = "deepgram"
     llm_provider: str = "anthropic"
     llm_model: str = "claude-sonnet-4-20250514"

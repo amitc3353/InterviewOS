@@ -39,15 +39,26 @@ def main():
     # Get scenario from command line or use default
     scenario = "Design a URL shortener"
     if len(sys.argv) > 1:
-        scenario = sys.argv[1]
+        scenario = " ".join(sys.argv[1:])  # Join all args as scenario
     
-    logger.info(f"Starting interview agent for scenario: {scenario}")
+    logger.info("=" * 80)
+    logger.info(f"Starting InterviewOS Agent")
+    logger.info(f"Scenario: {scenario}")
     logger.info(f"LiveKit URL: {config.livekit_url}")
-    logger.info(f"Using model: {config.llm_model}")
-    logger.info(f"TTS voice: {config.tts_voice}")
+    logger.info(f"LLM Model: {config.llm_model}")
+    logger.info(f"TTS Voice: {config.tts_voice}")
+    logger.info(f"VAD Sensitivity: {config.vad_sensitivity}")
+    logger.info(f"Silence Threshold: {config.silence_threshold_ms}ms")
+    logger.info("=" * 80)
     
     # Run the agent
-    run_agent(config, scenario)
+    try:
+        run_agent(config, scenario)
+    except KeyboardInterrupt:
+        logger.info("Agent stopped by user")
+    except Exception as e:
+        logger.error(f"Agent error: {e}", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

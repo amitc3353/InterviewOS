@@ -1,11 +1,11 @@
-"""Main LiveKit agent for interview simulation."""
+"""Interview agent using LiveKit Agents 1.0 API with custom nodes."""
 
 import logging
-from typing import Optional
 import uuid
+from typing import AsyncIterable
 
 from livekit import agents, rtc
-from livekit.agents import JobContext, WorkerOptions, cli
+from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, llm, cli
 from livekit.plugins import deepgram, openai, silero, anthropic
 
 from ..config import AgentConfig
@@ -16,8 +16,12 @@ from ..interview.response_parser import ResponseParser
 logger = logging.getLogger(__name__)
 
 
-class InterviewAgent:
-    """LiveKit agent that conducts system design interviews."""
+class InterviewAgent(Agent):
+    """
+    Custom Agent that conducts system design interviews.
+    
+    Uses LiveKit Agents 1.0 API with llm_node and tts_node overrides.
+    """
     
     def __init__(self, config: AgentConfig, scenario: str):
         """
@@ -25,8 +29,10 @@ class InterviewAgent:
         
         Args:
             config: Agent configuration
-            scenario: Interview scenario (e.g., "Design a URL shortener")
+            scenario: Interview scenario (e.g., "Design a payment gateway")
         """
+        super().__init__()
+        
         self.config = config
         self.scenario = scenario
         
@@ -38,106 +44,173 @@ class InterviewAgent:
         self.phase_manager = PhaseManager(scenario)
         self.response_parser = ResponseParser()
         
+        # Track user input for history
+        self.pending_user_input = None
+        
         logger.info(f"Initialized InterviewAgent for scenario: {scenario}")
     
-    async def entrypoint(self, ctx: JobContext):
-        """
-        Main entrypoint for LiveKit agent.
-        
-        This is called when a participant joins the room.
-        """
-        logger.info(f"Agent starting for room: {ctx.room.name}")
-        
-        # Wait for participant to connect
-        await ctx.connect()
-        
-        # Get the participant
-        participant = await ctx.wait_for_participant()
-        logger.info(f"Participant joined: {participant.identity}")
-        
-        # Run the interview
-        await self._run_interview(ctx, participant)
-    
-    async def _run_interview(self, ctx: JobContext, participant: rtc.Participant):
-        """Run the actual interview loop."""
-        
-        # Initialize agent with pipeline
-        assistant = agents.Agent(
-            vad=silero.VAD.load(min_silence_duration=self.config.silence_threshold_ms / 1000.0),
-            stt=deepgram.STT(api_key=self.config.deepgram_api_key),
-            llm=anthropic.LLM(
-                model=self.config.llm_model,
-                api_key=self.config.anthropic_api_key,
-            ),
-            tts=openai.TTS(
-                voice=self.config.tts_voice,
-                api_key=self.config.openai_api_key,
-            ),
-            chat_ctx=agents.ChatContext(),
-        )
-        
-        # Set up hooks
-        assistant.llm.on("before_llm_cb", self._before_llm_callback)
-        assistant.tts.on("before_tts_cb", self._before_tts_callback)
-        
-        # Start the agent
-        assistant.start(ctx.room, participant)
+    async def on_enter(self):
+        """Called when agent becomes active in session."""
+        logger.info(f"Agent entering session for scenario: {self.scenario}")
         
         # Initial greeting
-        await assistant.say("Hello! I'm ready to begin your system design interview. Are you ready to start?")
-        
-        logger.info("Interview started")
+        greeting = f"Hello! I'm ready to begin your system design interview for: {self.scenario}. Are you ready to start?"
+        await self.say(greeting)
     
-    def _before_llm_callback(self, chat_ctx: agents.ChatContext) -> agents.ChatContext:
+    async def llm_node(
+        self,
+        *,
+        chat_ctx: llm.ChatContext,
+    ) -> AsyncIterable[str | llm.ChatChunk]:
         """
-        Called before LLM processes input.
+        Custom LLM node - modifies chat context before LLM inference.
         
-        This is where we inject the interview phase context and system prompt.
+        This is where we:
+        1. Record user input to conversation history
+        2. Inject phase-aware system prompt with INTERVIEWER_BEHAVIOR rules
+        3. Include locked constraints and recent history
         """
-        # Get current system prompt based on phase
+        # Record user's latest message (if present)
+        if chat_ctx.messages:
+            latest_msg = chat_ctx.messages[-1]
+            if latest_msg.role == "user":
+                # Extract text content
+                user_text = ""
+                for content in latest_msg.content:
+                    if isinstance(content, llm.ChatText):
+                        user_text += content.text
+                
+                if user_text:
+                    self.session.state.add_message("user", user_text)
+                    logger.debug(f"Recorded user message: {user_text[:100]}...")
+        
+        # Build phase-aware system prompt
         system_prompt = self.phase_manager.get_system_prompt(self.session.state)
         
-        # Update chat context with phase-aware prompt
-        chat_ctx.messages[0] = agents.ChatMessage(
+        # Update chat context with interview-specific system prompt
+        chat_ctx.messages[0] = llm.ChatMessage(
             role="system",
-            content=system_prompt
+            content=[llm.ChatText(text=system_prompt)]
         )
         
-        logger.debug(f"LLM callback - Phase: {self.session.state.phase.value}")
+        logger.debug(f"LLM node - Phase: {self.session.state.phase.value}, Turn: {self.session.state.phase_turn_count}")
         
-        return chat_ctx
+        # Use default LLM implementation
+        async for chunk in Agent.default.llm_node(self, chat_ctx=chat_ctx):
+            yield chunk
     
-    def _before_tts_callback(self, text: str) -> str:
+    async def tts_node(
+        self,
+        *,
+        text_stream: AsyncIterable[str],
+    ) -> AsyncIterable[str]:
         """
-        Called before TTS converts text to speech.
+        Custom TTS node - processes LLM output before speech synthesis.
         
-        This is where we parse the JSON response, update session state,
-        and extract only the spoken text.
+        This is where we:
+        1. Collect full LLM response
+        2. Parse JSON to extract spoken text, phase updates, and constraint updates
+        3. Update session state (locked constraints, phase transitions)
+        4. Return only the spoken text for TTS
         """
-        # Parse LLM response
-        spoken_text, updated_constraints = self.response_parser.parse(text)
+        # Collect full response from LLM
+        full_response = ""
+        async for text_chunk in text_stream:
+            full_response += text_chunk
         
-        # Update session state
+        logger.debug(f"Raw LLM response: {full_response[:200]}...")
+        
+        # Parse response
+        spoken_text, new_phase, updated_constraints = self.response_parser.parse(full_response)
+        
+        # Update locked constraints
         if updated_constraints:
-            # Add new constraints (deduplicate)
-            for constraint in updated_constraints:
-                if constraint not in self.session.state.locked_constraints:
-                    self.session.state.locked_constraints.append(constraint)
-                    logger.info(f"Locked constraint added: {constraint}")
+            for key, value in updated_constraints.items():
+                self.session.state.lock_constraint(key, value)
+                logger.info(f"Locked constraint: {key} = {value}")
         
-        # Check if we should transition phases
-        if self.phase_manager.should_transition(self.session.state):
-            next_phase = self.phase_manager.get_next_phase(self.session.state.phase)
-            logger.info(f"Transitioning from {self.session.state.phase.value} to {next_phase.value}")
-            self.session.state.advance_phase(next_phase)
+        # Handle phase transition
+        if new_phase:
+            try:
+                requested_phase = InterviewPhase(new_phase)
+                
+                # Check if transition is allowed (content + time-based)
+                if self.phase_manager.should_transition_phase(self.session.state, requested_phase):
+                    if self.session.state.advance_phase(requested_phase):
+                        logger.info(f"Phase transitioned: {self.session.state.phase.value}")
+                    else:
+                        logger.warning(f"Phase transition blocked (monotonic): {new_phase}")
+                else:
+                    logger.debug(f"Phase transition not ready: {self.session.state.phase.value} -> {new_phase}")
+            except ValueError:
+                logger.warning(f"Invalid phase in response: {new_phase}")
         
-        # Add to conversation history
+        # Record assistant message
         self.session.state.add_message("assistant", spoken_text)
         
-        logger.debug(f"TTS callback - Spoken text: {spoken_text[:100]}...")
+        logger.debug(f"Spoken text: {spoken_text[:100]}...")
+        logger.info(f"State: Phase={self.session.state.phase.value}, "
+                   f"Turn={self.session.state.phase_turn_count}, "
+                   f"Constraints={len(self.session.state.locked_constraints)}")
         
-        # Return only the spoken text (not the full JSON)
-        return spoken_text
+        # Yield spoken text for TTS
+        yield spoken_text
+
+
+async def entrypoint(ctx: JobContext):
+    """
+    Entrypoint for LiveKit agent.
+    
+    Called when a participant joins the room.
+    """
+    logger.info(f"Agent starting for room: {ctx.room.name}")
+    
+    # Load config
+    from ..config import AgentConfig
+    config = AgentConfig.from_env()
+    
+    # Get scenario from job metadata or use default
+    scenario = ctx.job.metadata.get("scenario", "Design a URL shortener")
+    
+    # Create interview agent
+    interview_agent = InterviewAgent(config, scenario)
+    
+    # Create agent session
+    session = AgentSession(
+        # Models
+        stt=deepgram.STT(
+            api_key=config.deepgram_api_key,
+            model="nova-2"
+        ),
+        llm=anthropic.LLM(
+            model=config.llm_model,
+            api_key=config.anthropic_api_key,
+        ),
+        tts=openai.TTS(
+            voice=config.tts_voice,
+            api_key=config.openai_api_key,
+        ),
+        
+        # VAD configuration
+        vad=silero.VAD.load(
+            min_silence_duration=config.silence_threshold_ms / 1000.0,
+            min_speech_duration=0.2,  # 200ms minimum speech
+        ),
+        
+        # Turn detection
+        turn_detection=agents.TurnDetection(
+            enable_speech_to_text=True,
+            enable_interruption=True,
+        ),
+        
+        # Chat context
+        chat_ctx=llm.ChatContext(),
+    )
+    
+    # Start session with our custom agent
+    await session.start(ctx.room, interview_agent)
+    
+    logger.info("Interview session started")
 
 
 def run_agent(config: AgentConfig, scenario: str):
@@ -148,12 +221,9 @@ def run_agent(config: AgentConfig, scenario: str):
         config: Agent configuration
         scenario: Interview scenario
     """
-    agent = InterviewAgent(config, scenario)
-    
     # Create worker
     worker = agents.Worker(
-        entrypoint_fnc=agent.entrypoint,
-        request_fnc=None,  # No custom request handling
+        entrypoint_fnc=entrypoint,
         opts=WorkerOptions(
             api_key=config.livekit_api_key,
             api_secret=config.livekit_api_secret,
