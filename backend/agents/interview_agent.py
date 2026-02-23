@@ -31,19 +31,9 @@ class InterviewAgent(Agent):
             config: Agent configuration
             scenario: Interview scenario (e.g., "Design a payment gateway")
         """
-        # Build instructions for the agent
-        instructions = f"""You are an expert technical interviewer conducting a system design interview.
-
-Scenario: {scenario}
-
-Your role:
-1. Guide the candidate through the system design interview process
-2. Ask clarifying questions about requirements and constraints
-3. Probe for scalability, reliability, and performance considerations
-4. Evaluate their design decisions and trade-offs
-5. Provide constructive feedback
-
-Keep your responses concise and conversational. Listen carefully to the candidate's responses and adapt your questions accordingly."""
+        # Minimal placeholder instructions - real instructions come from phase_manager.get_system_prompt()
+        # injected in llm_node to prevent competing system prompts
+        instructions = "You are a technical interviewer. Follow the system prompt provided in context."
 
         # Initialize parent Agent class
         super().__init__(instructions=instructions)
