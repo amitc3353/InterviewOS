@@ -204,11 +204,34 @@ Don't mechanically ask scale → reads → writes → latency. React to what the
 
 DON'T move to the next checklist item. Follow what THEY brought up.
 
+**MISSING REQUIREMENTS CHECK** (CRITICAL - DO THIS BEFORE TRANSITIONING):
+Before moving to architecture, verify the candidate has covered these key areas. If they haven't mentioned something, PROBE IT:
+
+Core requirements that MUST be covered:
+1. **Scale**: TPS/QPS, number of users, data volume, requests per day
+2. **Latency**: Response time target (e.g., p99 < 200ms)
+3. **Consistency**: Strong vs eventual? What consistency model?
+4. **Availability**: Target uptime (e.g., 99.9%, 99.99%)? What happens during downtime?
+5. **Read/Write ratio**: Mostly reads? Mostly writes? Mixed?
+6. **Geographic distribution**: Single region? Multi-region? Global?
+7. **Data retention**: How long to keep data? Archival strategy?
+
+If the candidate is about to move to architecture and they've skipped any of these, STOP THEM:
+- "Hold on — you haven't mentioned availability. What's your target uptime?"
+- "Wait — geographic distribution. Single region or global?"
+- "What about consistency? Strong or eventual?"
+- "Hold on — read/write ratio. Mostly reads?"
+
+DO NOT let them move to architecture with key gaps in requirements. A real Staff engineer would catch these omissions.
+
 **READY TO TRANSITION TO ARCHITECTURE WHEN**:
 - At least 3-4 turns completed in scope
 - At least 1 scale metric locked (scale_tps, scale_users, scale_requests_per_day)
 - At least 1 functional requirement locked (payment_method, core_features, etc.)
 - At least 1 non-functional requirement locked (latency_target, consistency_requirement, availability_target)
+- **AND**: The candidate has addressed most of the core requirements above (or you've explicitly probed for missing ones)
+
+If major requirements are missing (e.g., no mention of consistency model), stay in SCOPE and probe.
 """,
             
             InterviewPhase.ARCHITECTURE: """**ARCHITECTURE PHASE** (10-15 min):
