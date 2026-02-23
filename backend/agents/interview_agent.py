@@ -123,46 +123,26 @@ Keep your responses concise and conversational. Listen carefully to the candidat
         
         logger.debug(f"LLM node - Phase: {self.interview_session.state.phase.value}, Turn: {self.interview_session.state.phase_turn_count}")
         
-        # Use default LLM implementation
-        async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
-            yield chunk
-    
-    async def tts_node(
-        self,
-        text: AsyncIterable[str],
-        model_settings: agents.ModelSettings,
-    ):
-        """
-        Custom TTS node - processes LLM output before speech synthesis.
-        
-        This is where we:
-        1. Collect full LLM response
-        2. Parse JSON to extract spoken text, phase updates, and constraint updates
-        3. Update session state (locked constraints, phase transitions)
-        4. Return only the spoken text for TTS
-        """
-        # Collect full response from LLM
+        # Buffer the entire LLM response to parse JSON before streaming
+        # This prevents raw JSON from leaking to the user
         full_response = ""
-        async for text_chunk in text:
-            full_response += text_chunk
+        async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
+            # Accumulate chunks
+            if chunk.delta and chunk.delta.content:
+                full_response += chunk.delta.content
         
-        logger.debug(f"Raw LLM response: {full_response[:200]}...")
-        
-        # Parse response
+        # Parse the complete response
         spoken_text, new_phase, updated_constraints = self.response_parser.parse(full_response)
         
-        # Update locked constraints
+        # Update state before yielding (so it's ready for next turn)
         if updated_constraints:
             for key, value in updated_constraints.items():
                 self.interview_session.state.lock_constraint(key, value)
                 logger.info(f"Locked constraint: {key} = {value}")
         
-        # Handle phase transition
         if new_phase:
             try:
                 requested_phase = InterviewPhase(new_phase)
-                
-                # Check if transition is allowed (content + time-based)
                 if self.phase_manager.should_transition_phase(self.interview_session.state, requested_phase):
                     if self.interview_session.state.advance_phase(requested_phase):
                         logger.info(f"Phase transitioned: {self.interview_session.state.phase.value}")
@@ -173,20 +153,37 @@ Keep your responses concise and conversational. Listen carefully to the candidat
             except ValueError:
                 logger.warning(f"Invalid phase in response: {new_phase}")
         
-        # Record assistant message
+        # Record assistant message with clean spoken text
         self.interview_session.state.add_message("assistant", spoken_text)
         
-        logger.debug(f"Spoken text: {spoken_text[:100]}...")
+        logger.debug(f"Parsed spoken text: {spoken_text[:100]}...")
         logger.info(f"State: Phase={self.interview_session.state.phase.value}, "
                    f"Turn={self.interview_session.state.phase_turn_count}, "
                    f"Constraints={len(self.interview_session.state.locked_constraints)}")
         
-        # Create async generator from spoken text and pass to default TTS
-        async def text_stream():
-            yield spoken_text
+        # Yield ONLY the clean spoken text (no JSON, no internal fields)
+        # Create a new chunk with only the spoken text
+        yield llm.ChatChunk(
+            id=chunk.id if 'chunk' in locals() else "parsed_response",
+            delta=llm.ChoiceDelta(
+                role="assistant",
+                content=spoken_text
+            )
+        )
+    
+    async def tts_node(
+        self,
+        text: AsyncIterable[str],
+        model_settings: agents.ModelSettings,
+    ):
+        """
+        Custom TTS node - pass through clean text to TTS.
         
-        # Use default TTS implementation
-        async for audio_frame in Agent.default.tts_node(self, text_stream(), model_settings):
+        Parsing is now done in llm_node, so we just stream the text directly to TTS.
+        """
+        # The text coming in has already been parsed and cleaned in llm_node
+        # Just pass it through to default TTS
+        async for audio_frame in Agent.default.tts_node(self, text, model_settings):
             yield audio_frame
 
 
