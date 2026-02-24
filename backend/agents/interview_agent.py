@@ -1,5 +1,6 @@
 """Interview agent using LiveKit Agents 1.0 API with custom nodes."""
 
+import asyncio
 import logging
 import time
 import uuid
@@ -11,8 +12,10 @@ from livekit.plugins import deepgram, openai, silero, anthropic
 
 from ..config import AgentConfig
 from ..models.session import InterviewSession, SessionState, InterviewPhase
+from ..models.scorecard import InterviewScorecard
 from ..interview.phase_manager import PhaseManager
 from ..interview.response_parser import StreamingResponseParser
+from ..interview.scoring_engine import ScoringEngine
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +51,11 @@ class InterviewAgent(Agent):
         
         # Initialize interview engine components
         self.phase_manager = PhaseManager(scenario)
-        
+
+        # Scoring
+        self._scoring_triggered = False
+        self._scoring_engine = ScoringEngine()
+
         # Track user input for history
         self.pending_user_input = None
         
@@ -159,6 +166,11 @@ class InterviewAgent(Agent):
                 if self.phase_manager.should_transition_phase(self.interview_session.state, requested_phase):
                     if self.interview_session.state.advance_phase(requested_phase):
                         logger.info(f"Phase transitioned: {self.interview_session.state.phase.value}")
+
+                        # Trigger scoring the moment we enter WRAP — all content is captured
+                        if requested_phase == InterviewPhase.WRAP and not self._scoring_triggered:
+                            self._scoring_triggered = True
+                            asyncio.create_task(self._generate_scorecard())
                     else:
                         logger.warning(f"Phase transition blocked (monotonic): {new_phase}")
                 else:
@@ -188,6 +200,31 @@ class InterviewAgent(Agent):
         # Just pass it through to default TTS
         async for audio_frame in Agent.default.tts_node(self, text, model_settings):
             yield audio_frame
+
+    async def _generate_scorecard(self):
+        """Generate post-interview scorecard. Runs as background task or on session_end."""
+        try:
+            logger.info("Generating interview scorecard...")
+            scorecard = await self._scoring_engine.score_interview(
+                self.interview_session, self.config
+            )
+            self.interview_session.scorecard = scorecard.to_dict()
+            saved_path = await self._scoring_engine.save_scorecard(scorecard)
+            logger.info(f"Scorecard saved: {saved_path}")
+            self._log_scorecard(scorecard)
+        except Exception as e:
+            logger.error(f"Scorecard generation failed: {e}", exc_info=True)
+
+    def _log_scorecard(self, scorecard: InterviewScorecard):
+        """Log human-readable scorecard for immediate visibility during testing."""
+        logger.info("=" * 60)
+        logger.info(f"INTERVIEW SCORECARD — {scorecard.hire_signal} ({scorecard.overall_score:.1f}/5)")
+        logger.info(f"Scenario: {scorecard.scenario}")
+        for dim_key, dim in scorecard.dimensions.items():
+            logger.info(f"  {dim_key}: {dim.score}/5 ({dim.label})")
+            logger.info(f"    {dim.rationale}")
+        logger.info(f"Narrative: {scorecard.narrative}")
+        logger.info("=" * 60)
 
 
 async def entrypoint(ctx: JobContext):
@@ -245,6 +282,13 @@ async def entrypoint(ctx: JobContext):
     @session.on("agent_speech_interrupted")
     def on_interrupted():
         logger.info("Interviewer interrupted by candidate — listening")
+
+    @session.on("session_end")
+    async def on_session_end():
+        """Fallback: score partial interviews if WRAP was never reached."""
+        if not interview_agent._scoring_triggered:
+            interview_agent._scoring_triggered = True
+            await interview_agent._generate_scorecard()
     
     # Send initial greeting using session.generate_reply
     await session.generate_reply(
