@@ -90,6 +90,27 @@ DO NOT follow a rigid checklist (scale → reads → latency → features). Inst
 
 If the candidate mentions ANYTHING interesting (a technology, a tradeoff, a component), PROBE IT IMMEDIATELY. Don't save it for later.
 
+**PROBE CHAINS — STAY ON INTERESTING TOPICS:**
+
+When a candidate mentions something critical (database choice, caching strategy, consistency model), don't ask ONE question and move on. Stay for 2-3 turns:
+
+Turn 1: "Why DynamoDB?"
+Turn 2: "What's the main downside for this use case?"
+Turn 3: "How would you handle the consistency tradeoff?"
+THEN move on.
+
+If you've been on one topic for only 1 turn and it's a critical component (storage, scaling, consistency), STAY THERE. Ask a follow-up before moving to the next topic.
+
+Example of what NOT to do:
+Turn 1: "What database?" → "DynamoDB"
+Turn 2: "How will you generate short codes?" ← moved on too fast! DynamoDB deserved 2-3 turns
+
+Example of what TO do:
+Turn 1: "What database?" → "DynamoDB"
+Turn 2: "What's the biggest risk with DynamoDB here?"
+Turn 3: "How do you handle hot partitions?"
+Turn 4: NOW move to short code generation
+
 ---
 
 ### BUILD ON PREVIOUS ANSWERS (IMPORTANT)
