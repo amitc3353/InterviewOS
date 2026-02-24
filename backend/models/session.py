@@ -111,7 +111,8 @@ class InterviewSession:
     state: SessionState = field(default_factory=SessionState)
     transcript: List[Dict] = field(default_factory=list)
     metadata: Dict = field(default_factory=dict)
-    
+    scorecard: Optional[Dict] = None
+
     def to_dict(self) -> Dict:
         """Convert session to dictionary for storage."""
         return {
@@ -129,6 +130,7 @@ class InterviewSession:
             ],
             "transcript": self.transcript,
             "metadata": self.metadata,
+            "scorecard": self.scorecard,
             "session_start_time": self.state.session_start_time.isoformat(),
             "elapsed_seconds": self.state.elapsed_seconds(),
             "total_turns": self.state.total_turn_count

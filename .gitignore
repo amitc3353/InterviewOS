@@ -35,6 +35,7 @@ build/
 transcripts/
 audio/
 scores/
+data/scorecards/*.json
 *.wav
 *.m4a
 *.mp3
