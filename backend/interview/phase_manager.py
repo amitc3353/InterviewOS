@@ -614,138 +614,71 @@ Show you're listening and connecting the dots. Don't treat each turn as isolated
 """
     
     def _get_response_format(self) -> str:
-        """Get JSON response format with examples."""
+        """Get inline tag response format with examples."""
         return """**BEFORE RESPONDING — CHECK THE CANDIDATE'S LAST MESSAGE**:
 Did the candidate ask a question? If yes, categorize it:
 
-1. **Validation-seeking** ("Right?", "Does that make sense?", "Am I close?", "Is that too much?", "Am I way off?", "I hope that's not too slow"):
-   → DO NOT answer. Use one of: "That's your call.", "Keep going.", "Why do you think so?", or just ignore it and ask your next question.
+1. **Validation-seeking** ("Right?", "Does that make sense?", "Am I close?", "Is that too much?"):
+   → DO NOT answer. Use: [ACK:That's your call.] or [ACK:Keep going.] then continue.
 
-2. **Genuine clarifying question** ("Should I assume X?", "Are we targeting Y?", "How many users?"):
-   → Answer in ONE short sentence, then redirect: "Assume global. How does that change things?"
+2. **Genuine clarifying question** ("Should I assume X?", "How many users?"):
+   → Answer in ONE short sentence inside [ACK:...], then ask your question.
 
 3. **Not a question** → Proceed normally.
 
-You MUST address the candidate's question (or deliberately deflect it) BEFORE asking your own question. Never ignore it entirely — that feels robotic and disconnected.
+**RESPONSE FORMAT** (inline tags, output ONLY tags — no other text):
 
-**RESPONSE FORMAT** (strict JSON):
-```json
-{
-  "phase": "current_phase_or_next_phase",
-  "interviewer_says": "1-3 word acknowledgment ONLY (rotate variety) OR empty string to skip",
-  "question": "One focused question (5-10 words max)",
-  "constraint_summary": "OPTIONAL: One natural sentence if transitioning phases AND new constraints added",
-  "update_locked_constraints": {"key": "value"} or null,
-  "what_im_listening_for": "What signals you're looking for",
-  "followup_if_vague": "Specific question if answer is vague"
-}
-```
+Tags:
+- [PHASE:phase_name]      — required every turn (current or next phase)
+- [ACK:text]              — 1-3 word acknowledgment. OMIT entirely to skip (40% of turns)
+- [Q:text]                — Your question, 5-10 words. OMIT for "just react" turns (15%)
+- [LOCK:key=value]        — Lock a new constraint. Repeat tag for multiple locks. OMIT if none.
+- [SUMMARY:text]          — Phase transition summary sentence. Replaces ACK. Use ONLY when transitioning phases AND new constraints were added. OMIT most turns.
+- [LISTEN:text]           — INTERNAL ONLY. What you're listening for. NEVER spoken aloud.
+- [FOLLOWUP:text]         — INTERNAL ONLY. Backup question if answer vague. NEVER spoken aloud.
+
+Rules:
+- Tags may appear in any order
+- [LISTEN:...] and [FOLLOWUP:...] are NEVER sent to TTS — they are internal signals only
+- Spoken text = [SUMMARY:...] (if present) OR [ACK:...] (if present), THEN [Q:...] (if present)
+- NEVER use both [SUMMARY:...] and [ACK:...] in the same response — use one or the other
+- Output ONLY tags — no prose, no markdown, no explanations outside tags
 
 **EXAMPLES**:
 
-**Good - Skip acknowledgment** (do this 40% of the time):
-```json
-{
-  "interviewer_says": "",
-  "question": "What about latency?"
-}
-```
+Skip acknowledgment (40% of turns):
+[PHASE:scope][Q:What about latency?][LISTEN:Looking for specific P99 target][FOLLOWUP:Give me a number]
 
-**Good - Acknowledgment + question** (do this 30% of the time):
-```json
-{
-  "interviewer_says": "Got it.",
-  "question": "What about latency requirements?"
-}
-```
+Acknowledgment + question (30% of turns):
+[PHASE:scope][ACK:Got it.][Q:What about latency?][LISTEN:Latency requirements]
 
-**Good - Just react, no question** (do this 15% of the time):
-```json
-{
-  "interviewer_says": "Hmm.",
-  "question": ""
-}
-```
+Just react, no question (15% of turns — creates natural pause):
+[PHASE:architecture][ACK:Hmm.][LISTEN:Waiting for them to elaborate]
 
-**IMPORTANT**: You MUST use the "just react" pattern (empty question) at least once every 7 turns. If you haven't done it in 7 turns, do it on the next turn. This creates natural thinking pauses that make the conversation feel real.
+Direct challenge, no acknowledgment (10% of turns):
+[PHASE:deep_dive][Q:Won't that be slow at 100K reads?][LISTEN:Testing scaling knowledge][FOLLOWUP:How would you fix it?]
 
-**Good - Direct challenge, no acknowledgment** (do this 10% of the time):
-```json
-{
-  "interviewer_says": "",
-  "question": "Won't that be slow at 100K reads?"
-}
-```
+Just acknowledge, no question (5% of turns):
+[PHASE:scope][ACK:Makes sense.][LISTEN:Waiting to see if they continue]
 
-**Good - Just acknowledge, no question** (do this 5% of the time):
-```json
-{
-  "interviewer_says": "Makes sense.",
-  "question": ""
-}
-```
+Phase transition with summary (scope→architecture):
+[PHASE:architecture][SUMMARY:Alright — cards only, big scale, fraud first, and 500ms at P99.][Q:What's your high-level approach?][LOCK:latency_target=under 500ms P99]
 
-**Good constraint summary (scope → architecture transition)**:
-```json
-{
-  "interviewer_says": "",
-  "question": "What's your high-level approach?",
-  "constraint_summary": "Alright — cards only, big scale, fraud first, and we'll target 500ms at P99."
-}
-```
+Multiple constraints locked:
+[PHASE:scope][ACK:Right.][Q:What else do you need?][LOCK:scale_daily_users=1M][LOCK:consistency=eventual]
 
-**Bad (too verbose)**:
-```json
-{
-  "interviewer_says": "That's a really interesting point you raised there, let me ask about...",
-  "question": "I'm curious about how you would approach handling the scenario where the database becomes a bottleneck and you need to scale it horizontally."
-}
-```
+Answering a genuine clarifying question (scope phase):
+[PHASE:scope][ACK:Assume about a million daily.][Q:What else do you want to know?][LOCK:scale_daily_users=1M]
 
-**Bad (multiple questions)**:
-```json
-{
-  "question": "What about latency? Also, what about consistency? And how will you handle failures?"
-}
-```
+Deflecting validation-seeking:
+[PHASE:scope][ACK:That's your call.][Q:What about consistency requirements?]
 
-**Bad (repeating locked constraint)**:
-```json
-{
-  "question": "What scale are we talking here?"
-}
-# This is BAD if "scale_tps: 10000" is already locked!
-```
+**BAD EXAMPLES (never do these)**:
+[ACK:That's a really interesting point you raised there]  ← too verbose
+[Q:I'm curious about how you would approach the database scaling challenge]  ← too long
+Got it. What about latency?  ← prose outside tags — NEVER output text outside tags
 
-**Good - Responding to candidate's validation-seeking question**:
-Candidate said: "Maybe 500ms. Hope that's not too slow?"
-```json
-{
-  "interviewer_says": "That's your call.",
-  "question": "What about consistency requirements?"
-}
-```
-
-**Good - Responding to candidate's genuine clarifying question**:
-Candidate said: "Are we designing for mobile, web, or both?"
-```json
-{
-  "interviewer_says": "Both.",
-  "question": "How does that change your approach?"
-}
-```
-
-**Bad - Ignoring candidate's question entirely**:
-Candidate said: "Does that seem right? Or am I way off?"
-```json
-{
-  "interviewer_says": "",
-  "question": "What about latency requirements?"
-}
-```
-This is BAD because the candidate asked something and you completely ignored it. Even a deflection ("That's your call.") is better than ignoring.
-
-**CRITICAL - VARY THE PATTERN**: If you've used acknowledgment+question for 2 turns in a row, skip the acknowledgment on turn 3. Mix it up constantly. Don't let the pattern become predictable.
+**CRITICAL**: Vary the pattern. If you've used [ACK:...][Q:...] for 2 turns in a row, skip [ACK:...] on turn 3. Make the pattern unpredictable.
 """
     
     def should_transition_scope_to_architecture(self, state: SessionState) -> bool:
