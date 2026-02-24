@@ -42,10 +42,10 @@ _RUBRIC = """\
 Score each dimension 1-5 using ONLY integer values. Use ALL criteria below:
 
 REQUIREMENTS GATHERING (weight 0.15)
-5 – Asked proactively about all 6 areas (scale, latency, consistency, availability, \
-R/W ratio, geography); gave specific numbers; 5+ constraints locked
-4 – Covered 4-5 areas; mostly specific numbers; 3-4 constraints locked; minor gaps
-3 – Covered 3-4 areas; some vagueness accepted; 2-3 constraints locked; needed light nudging
+5 – Asked proactively about 5-6 areas (scale, latency, consistency, availability, \
+R/W ratio, geography); gave specific numbers; 4+ constraints locked
+4 – Covered 4-5 areas; mostly specific numbers; 3 constraints locked; minor gaps
+3 – Covered 3-4 areas; some vagueness accepted; 2 constraints locked; needed light nudging
 2 – Covered 1-2 areas; missed critical constraints; 0-1 constraints locked; needed heavy prompting
 1 – Jumped to design without scoping; no clarifying questions; no constraints established
 
@@ -77,7 +77,8 @@ minor gaps in edge cases
 
 COMMUNICATION (weight 0.10)
 5 – Crystal clear, structured thinking, concise and precise, articulated tradeoffs \
-with specificity
+with specificity; uses frameworks (e.g., "Let me break this into 3 parts"); \
+signposts transitions; verbalizes tradeoffs before choosing
 4 – Clear and organized throughout; minor stumbles; tradeoffs generally explained
 3 – Mostly clear; occasional rambling or imprecision; structure apparent but not tight
 2 – Hard to follow at times; disorganized; tradeoffs poorly explained
@@ -168,6 +169,7 @@ class ScoringEngine:
             response = await client.messages.create(
                 model=config.llm_model,
                 max_tokens=2048,
+                temperature=0,          # deterministic scoring
                 system=_SCORING_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": prompt}],
             )

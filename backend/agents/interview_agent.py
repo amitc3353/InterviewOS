@@ -167,7 +167,8 @@ class InterviewAgent(Agent):
                     if self.interview_session.state.advance_phase(requested_phase):
                         logger.info(f"Phase transitioned: {self.interview_session.state.phase.value}")
 
-                        # Trigger scoring the moment we enter WRAP — all content is captured
+                        # Safe without a lock: asyncio is cooperative and the check+set below has no
+                        # await between them, so no other coroutine can interleave here.
                         if requested_phase == InterviewPhase.WRAP and not self._scoring_triggered:
                             self._scoring_triggered = True
                             asyncio.create_task(self._generate_scorecard())
