@@ -89,3 +89,34 @@ def test_json_fallback():
     assert "Got it." in spoken or "What about scale?" in spoken
     phase, _ = parser.get_state_updates()
     assert phase == "scope"
+
+
+def test_context_tag():
+    """CONTEXT tag should be spoken (like ACK/Q)."""
+    out, p = _feed_and_flush(
+        "[PHASE:failure][CONTEXT:Your database region just went down.][Q:What breaks first?]"
+    )
+    assert "database region just went down" in out
+    assert "What breaks first?" in out
+    phase, _ = p.get_state_updates()
+    assert phase == "failure"
+
+
+def test_context_suppressed_by_summary():
+    """CONTEXT must be suppressed if SUMMARY already spoken (same rule as ACK)."""
+    out, p = _feed_and_flush(
+        "[PHASE:architecture][SUMMARY:10K writes, fraud first.][CONTEXT:Extra context.][Q:Approach?]"
+    )
+    assert "10K writes" in out
+    assert "Approach?" in out
+    assert "Extra context" not in out   # Must be suppressed
+
+
+def test_context_without_ack():
+    """CONTEXT alone before Q is the standard pattern (no ACK needed)."""
+    out, p = _feed_and_flush(
+        "[PHASE:scope][CONTEXT:About a million DAU, mostly reads — 100:1 ratio.][Q:What else?]"
+    )
+    assert "million DAU" in out
+    assert "What else?" in out
+    assert "CONTEXT" not in out         # Tag name must not leak
