@@ -1,8 +1,9 @@
 """Interview agent using LiveKit Agents 1.0 API with custom nodes."""
 
 import logging
+import time
 import uuid
-from typing import AsyncIterable
+from typing import AsyncIterable, Optional
 
 from livekit import agents, rtc
 from livekit.agents import Agent, AgentSession, AgentServer, JobContext, WorkerOptions, llm, cli
@@ -11,7 +12,7 @@ from livekit.plugins import deepgram, openai, silero, anthropic
 from ..config import AgentConfig
 from ..models.session import InterviewSession, SessionState, InterviewPhase
 from ..interview.phase_manager import PhaseManager
-from ..interview.response_parser import ResponseParser
+from ..interview.response_parser import StreamingResponseParser
 
 logger = logging.getLogger(__name__)
 
@@ -31,19 +32,9 @@ class InterviewAgent(Agent):
             config: Agent configuration
             scenario: Interview scenario (e.g., "Design a payment gateway")
         """
-        # Build instructions for the agent
-        instructions = f"""You are an expert technical interviewer conducting a system design interview.
-
-Scenario: {scenario}
-
-Your role:
-1. Guide the candidate through the system design interview process
-2. Ask clarifying questions about requirements and constraints
-3. Probe for scalability, reliability, and performance considerations
-4. Evaluate their design decisions and trade-offs
-5. Provide constructive feedback
-
-Keep your responses concise and conversational. Listen carefully to the candidate's responses and adapt your questions accordingly."""
+        # Minimal placeholder instructions - real instructions come from phase_manager.get_system_prompt()
+        # injected in llm_node to prevent competing system prompts
+        instructions = "You are a technical interviewer. Follow the system prompt provided in context."
 
         # Initialize parent Agent class
         super().__init__(instructions=instructions)
@@ -57,7 +48,6 @@ Keep your responses concise and conversational. Listen carefully to the candidat
         
         # Initialize interview engine components
         self.phase_manager = PhaseManager(scenario)
-        self.response_parser = ResponseParser()
         
         # Track user input for history
         self.pending_user_input = None
@@ -80,89 +70,92 @@ Keep your responses concise and conversational. Listen carefully to the candidat
         model_settings: agents.ModelSettings,
     ):
         """
-        Custom LLM node - modifies chat context before LLM inference.
-        
-        This is where we:
-        1. Record user input to conversation history
-        2. Inject phase-aware system prompt with INTERVIEWER_BEHAVIOR rules
-        3. Include locked constraints and recent history
+        Custom LLM node — streams spoken text to TTS as tags complete.
+
+        Spoken tags ([ACK], [Q], [SUMMARY]) are yielded immediately.
+        State updates (phase, constraints) happen after stream ends.
+        Latency is logged every turn.
         """
-        # Get messages list (messages() is a method in LiveKit 1.4+)
+        turn_start = time.monotonic()
+        first_spoken_time: Optional[float] = None
+
+        # --- Record user message (unchanged logic) ---
         messages_list = chat_ctx.messages()
-        
-        # Record user's latest message (if present)
         if messages_list:
             latest_msg = messages_list[-1]
             if latest_msg.role == "user":
-                # Extract text content
                 user_text = ""
                 for content in latest_msg.content:
                     if isinstance(content, str):
                         user_text += content
                     elif isinstance(content, llm.ChatText):
                         user_text += content.text
-                
                 if user_text:
                     self.interview_session.state.add_message("user", user_text)
                     logger.debug(f"Recorded user message: {user_text[:100]}...")
-        
-        # Build phase-aware system prompt
+
+        # --- Inject phase-aware system prompt (unchanged logic) ---
         system_prompt = self.phase_manager.get_system_prompt(self.interview_session.state)
-        
-        # Update chat context with interview-specific system prompt
-        # In LiveKit 1.4+, we modify chat_ctx.items directly (it's a list)
         if chat_ctx.items and len(chat_ctx.items) > 0:
-            # First item should be the system message - update it
-            chat_ctx.items[0] = llm.ChatMessage(
-                role="system",
-                content=[system_prompt]  # content can be a list of strings
-            )
+            chat_ctx.items[0] = llm.ChatMessage(role="system", content=[system_prompt])
         else:
-            # No items yet, add system message
             chat_ctx.add_message(role="system", content=system_prompt)
-        
-        logger.debug(f"LLM node - Phase: {self.interview_session.state.phase.value}, Turn: {self.interview_session.state.phase_turn_count}")
-        
-        # Use default LLM implementation
+
+        logger.debug(
+            f"LLM node — Phase: {self.interview_session.state.phase.value}, "
+            f"Turn: {self.interview_session.state.phase_turn_count}"
+        )
+
+        # --- Streaming parse ---
+        parser = StreamingResponseParser()
+        last_chunk_id = "parsed_response"
+
         async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
-            yield chunk
-    
-    async def tts_node(
-        self,
-        text: AsyncIterable[str],
-        model_settings: agents.ModelSettings,
-    ):
-        """
-        Custom TTS node - processes LLM output before speech synthesis.
-        
-        This is where we:
-        1. Collect full LLM response
-        2. Parse JSON to extract spoken text, phase updates, and constraint updates
-        3. Update session state (locked constraints, phase transitions)
-        4. Return only the spoken text for TTS
-        """
-        # Collect full response from LLM
-        full_response = ""
-        async for text_chunk in text:
-            full_response += text_chunk
-        
-        logger.debug(f"Raw LLM response: {full_response[:200]}...")
-        
-        # Parse response
-        spoken_text, new_phase, updated_constraints = self.response_parser.parse(full_response)
-        
-        # Update locked constraints
+            if chunk.id:
+                last_chunk_id = chunk.id
+
+            if chunk.delta and chunk.delta.content:
+                spoken_fragment = parser.feed(chunk.delta.content)
+
+                if spoken_fragment:
+                    if first_spoken_time is None:
+                        first_spoken_time = time.monotonic()
+                        elapsed_ms = (first_spoken_time - turn_start) * 1000
+                        logger.info(f"⚡ First spoken text in {elapsed_ms:.0f}ms: {spoken_fragment!r}")
+
+                    yield llm.ChatChunk(
+                        id=last_chunk_id,
+                        delta=llm.ChoiceDelta(role="assistant", content=spoken_fragment),
+                    )
+                continue  # don't yield the raw chunk
+
+            yield chunk  # pass through non-text chunks (tool calls, control frames)
+
+        # --- Flush buffer after stream ends ---
+        final_fragment = parser.flush()
+        if final_fragment:
+            if first_spoken_time is None:
+                first_spoken_time = time.monotonic()
+            yield llm.ChatChunk(
+                id=last_chunk_id,
+                delta=llm.ChoiceDelta(role="assistant", content=final_fragment),
+            )
+
+        total_ms = (time.monotonic() - turn_start) * 1000
+        first_ms = ((first_spoken_time or turn_start) - turn_start) * 1000
+        logger.info(f"⚡ Turn complete in {total_ms:.0f}ms (first speech: {first_ms:.0f}ms)")
+
+        # --- Update state after stream (safe — doesn't affect current turn's audio) ---
+        new_phase, updated_constraints = parser.get_state_updates()
+
         if updated_constraints:
             for key, value in updated_constraints.items():
                 self.interview_session.state.lock_constraint(key, value)
                 logger.info(f"Locked constraint: {key} = {value}")
-        
-        # Handle phase transition
+
         if new_phase:
             try:
                 requested_phase = InterviewPhase(new_phase)
-                
-                # Check if transition is allowed (content + time-based)
                 if self.phase_manager.should_transition_phase(self.interview_session.state, requested_phase):
                     if self.interview_session.state.advance_phase(requested_phase):
                         logger.info(f"Phase transitioned: {self.interview_session.state.phase.value}")
@@ -172,21 +165,28 @@ Keep your responses concise and conversational. Listen carefully to the candidat
                     logger.debug(f"Phase transition not ready: {self.interview_session.state.phase.value} -> {new_phase}")
             except ValueError:
                 logger.warning(f"Invalid phase in response: {new_phase}")
+
+        # --- Record full turn in history ---
+        full_spoken = parser.get_spoken_text()
+        if full_spoken:
+            self.interview_session.state.add_message("assistant", full_spoken)
+            logger.debug(f"Recorded assistant turn: {full_spoken[:100]}...")
+        else:
+            logger.warning("Parser returned empty spoken text — skipping history record")
+    
+    async def tts_node(
+        self,
+        text: AsyncIterable[str],
+        model_settings: agents.ModelSettings,
+    ):
+        """
+        Custom TTS node - pass through clean text to TTS.
         
-        # Record assistant message
-        self.interview_session.state.add_message("assistant", spoken_text)
-        
-        logger.debug(f"Spoken text: {spoken_text[:100]}...")
-        logger.info(f"State: Phase={self.interview_session.state.phase.value}, "
-                   f"Turn={self.interview_session.state.phase_turn_count}, "
-                   f"Constraints={len(self.interview_session.state.locked_constraints)}")
-        
-        # Create async generator from spoken text and pass to default TTS
-        async def text_stream():
-            yield spoken_text
-        
-        # Use default TTS implementation
-        async for audio_frame in Agent.default.tts_node(self, text_stream(), model_settings):
+        Parsing is now done in llm_node, so we just stream the text directly to TTS.
+        """
+        # The text coming in has already been parsed and cleaned in llm_node
+        # Just pass it through to default TTS
+        async for audio_frame in Agent.default.tts_node(self, text, model_settings):
             yield audio_frame
 
 
@@ -226,17 +226,25 @@ async def entrypoint(ctx: JobContext):
         tts=openai.TTS(
             voice=config.tts_voice,
             api_key=config.openai_api_key,
+            model=config.tts_model,
+            speed=config.tts_speed,
         ),
         vad=silero.VAD.load(
             min_silence_duration=config.silence_threshold_ms / 1000.0,
         ),
+        min_endpointing_delay=config.min_endpointing_delay,
+        max_endpointing_delay=config.max_endpointing_delay,
     )
-    
+
     # Start session with our custom agent
     await session.start(
         room=ctx.room,
         agent=interview_agent,
     )
+
+    @session.on("agent_speech_interrupted")
+    def on_interrupted():
+        logger.info("Interviewer interrupted by candidate — listening")
     
     # Send initial greeting using session.generate_reply
     await session.generate_reply(

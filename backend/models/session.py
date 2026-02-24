@@ -98,9 +98,9 @@ class SessionState:
         """Lock a constraint (key-value pair)."""
         self.locked_constraints[key] = value
     
-    def has_constraint_category(self, category: str) -> bool:
-        """Check if we have any constraint in a category (e.g., 'scale_', 'latency_')."""
-        return any(key.startswith(category) for key in self.locked_constraints.keys())
+    def has_constraint_category(self, prefix: str) -> bool:
+        """Check if any locked constraint key starts with the given prefix."""
+        return any(key.startswith(prefix) for key in self.locked_constraints)
 
 
 @dataclass

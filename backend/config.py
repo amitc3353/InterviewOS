@@ -28,11 +28,17 @@ class AgentConfig:
     llm_model: str = "claude-sonnet-4-20250514"
     tts_provider: str = "openai"
     tts_voice: str = "echo"  # alloy, echo, fable, onyx, nova, shimmer
-    
+    tts_model: str = "tts-1"    # Faster than tts-1-hd; negligible quality difference for short responses
+    tts_speed: float = 1.05     # Slightly faster than default; natural interviewer cadence
+
     # VAD configuration
     vad_sensitivity: float = 0.5  # 0.0-1.0
     silence_threshold_ms: int = 600  # milliseconds of silence before considering turn complete
-    
+
+    # Endpointing — how long to wait after speech before triggering STT
+    min_endpointing_delay: float = 0.6   # seconds; start here, tune upward if candidates get cut off
+    max_endpointing_delay: float = 5.0   # seconds; covers long thinking pauses
+
     # Turn detection
     use_semantic_turn_detection: bool = True  # Use both VAD + semantic turn detection
     
@@ -46,6 +52,11 @@ class AgentConfig:
             deepgram_api_key=os.getenv("DEEPGRAM_API_KEY", ""),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
+            tts_model=os.getenv("TTS_MODEL", "tts-1"),
+            tts_speed=float(os.getenv("TTS_SPEED", "1.05")),
+            min_endpointing_delay=float(os.getenv("MIN_ENDPOINTING_DELAY", "0.6")),
+            max_endpointing_delay=float(os.getenv("MAX_ENDPOINTING_DELAY", "5.0")),
+            silence_threshold_ms=int(os.getenv("SILENCE_THRESHOLD_MS", "600")),
         )
     
     def validate(self) -> bool:
