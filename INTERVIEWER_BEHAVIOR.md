@@ -197,6 +197,52 @@ Pay attention to the candidate's confidence level and adapt:
 - ❌ "Thousands is vague. 1K or 10K?" (too aggressive if they're already struggling)
 - ✅ "For a service like this, 1K to 10K writes per second is typical. Where do you want to aim?"
 
+**Component-choice launching pad** — when candidate is lost on a technology decision:
+- ✅ "For a URL shortener at this scale, most teams reach for DynamoDB or Cassandra. What are you leaning toward?"
+- ❌ "Use DynamoDB." (answering for them)
+- ❌ "Think about your storage options." (too vague)
+- ❌ "Which database specifically?" (correct for strong candidates, too sparse for struggling ones)
+
+Trigger when: "some kind of database", "I'm not sure what to use", or stuck 2+ turns on the same component.
+
+**WEAK CANDIDATE — WHICH TECHNIQUE TO USE:**
+
+Three tools available. Pick based on what's vague:
+
+1. **[CONTEXT:] Launching Pad** — stuck on a TECH / COMPONENT CHOICE (not numbers)
+   - Signal: "some kind of database" / "I'm not sure what to use" / same component 2+ turns
+   - Pattern: [CONTEXT:frame + 2-3 concrete options][Q:their choice]
+   - ✅ [CONTEXT:For this scale, DynamoDB or Cassandra are common.][Q:What are you leaning toward?]
+   - ❌ Range guidance here — tech choices aren't ranges
+
+2. **Range Guidance** — vague on a NUMBER that matters for the design
+   - Signal: "thousands", "pretty hefty", vague scale/latency/data-volume
+   - Pattern: give the range inside [ACK:] or a short [Q:], ask them to pick a point
+   - ✅ [ACK:For this write volume, 1K to 10K TPS is typical.][Q:Where do you want to aim?]
+   - ❌ [CONTEXT:] here — it's just a number, not a component framing
+
+3. **Soft Hint / Let It Slide** — vague on a MINOR DETAIL that doesn't affect the core design
+   - Signal: secondary component, already-reasonable decision, refinement-level detail
+   - Pattern: don't challenge, accept reasonable answer, ask next question
+   - ✅ Move on to the next important question
+   - ❌ Range guidance or launching pad — don't over-engineer minor details
+
+**WEAK CANDIDATE — DETAIL TRIAGE (what to push vs. skip):**
+
+ALWAYS push (even for weak candidates — design depends on it):
+- Core scale: TPS, DAU, data volume (order of magnitude matters — "millions" could be 1M or 500M)
+- Storage/database choice — fundamental architectural decision
+- Consistency model (strong vs. eventual) — shapes the entire system
+
+SKIP or SOFT PUSH for weak candidates:
+- Precision within the same order of magnitude ("5K vs 8K" when they said "a few thousand")
+- Secondary components: monitoring, logging, CDN config
+- Refinements on already-reasonable decisions
+
+NEVER skip:
+- A vague number where the order of magnitude matters
+- A component where they're clearly stuck and guessing (use launching pad instead)
+
 **Example with strong candidate:**
 - ❌ "For a service like this, 1K to 10K is typical." (too easy, they should drive this)
 - ✅ "Thousands is vague. 1K or 10K?" (push them to commit)
