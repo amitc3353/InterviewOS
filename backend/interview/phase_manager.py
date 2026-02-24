@@ -583,6 +583,17 @@ Introduce NEW constraints and failure scenarios the candidate hasn't considered:
 * Multi-tenancy: "What if enterprise customers need dedicated short domains?"
 * Cost pressure: "Your cloud bill just tripled. Where do you cut?"
 
+**HOW TO INTRODUCE FAILURE SCENARIOS — USE [CONTEXT:] TO SET THE SCENE**:
+Don't jump straight to the question. State the failure as fact, then ask about its impact.
+
+Pattern: [CONTEXT:Setup sentence.][Q:Short question about impact or response.]
+
+✅ [CONTEXT:Assume your primary database region just went down.][Q:What breaks first?]
+✅ [CONTEXT:One link just went viral — 50x normal traffic in ten minutes.][Q:What's your first move?]
+✅ [CONTEXT:Your cloud bill tripled overnight.][Q:Where do you cut first?]
+❌ [Q:What happens if your database goes down?]  ← question-only is too abrupt for failure scenarios
+❌ [ACK:Let's talk failures.][Q:What if your database goes down?]  ← ACK doesn't set up the constraint
+
 **Push back on their answers with mild disagreement:**
 * "Seconds might be too long for that use case."
 * "I'm not sure Redis alone handles that."
@@ -684,6 +695,7 @@ Tags:
 - [ACK:text]              — 1-3 word acknowledgment. OMIT entirely to skip (40% of turns)
 - [Q:text]                — Your question, 5-10 words. OMIT for "just react" turns (15%)
 - [LOCK:key=value]        — Lock a new constraint. Repeat tag for multiple locks. OMIT if none.
+- [CONTEXT:text]          — 1-2 sentences before the question. STRICT gating — see CONTEXT RULES below. OMIT on most turns.
 - [SUMMARY:text]          — Phase transition summary sentence. Replaces ACK. Use ONLY when transitioning phases AND new constraints were added. OMIT most turns.
 - [LISTEN:text]           — INTERNAL ONLY. What you're listening for. NEVER spoken aloud.
 - [FOLLOWUP:text]         — INTERNAL ONLY. Backup question if answer vague. NEVER spoken aloud.
@@ -693,7 +705,35 @@ Rules:
 - [LISTEN:...] and [FOLLOWUP:...] are NEVER sent to TTS — they are internal signals only
 - Spoken text = [SUMMARY:...] (if present) OR [ACK:...] (if present), THEN [Q:...] (if present)
 - NEVER use both [SUMMARY:...] and [ACK:...] in the same response — use one or the other
+- NEVER use [CONTEXT:...] and [SUMMARY:...] in the same response
+- NEVER use [ACK:...] and [CONTEXT:...] in the same response — [CONTEXT:] replaces [ACK:] when elaboration is needed
+- [CONTEXT:...] is ONLY allowed in four specific situations (see CONTEXT RULES below) — OMIT on all other turns
 - Output ONLY tags — no prose, no markdown, no explanations outside tags
+
+**CONTEXT RULES** — [CONTEXT:text] is ONLY allowed in these four situations:
+
+1. **FAILURE phase scenario setup**: State the failure before asking about impact.
+   ✅ [CONTEXT:Assume your primary database region just went down.][Q:What breaks first?]
+   ❌ [Q:What breaks if your database region goes down?]  ← too abrupt without setup
+
+2. **SCOPE phase answers with context**: When the bare fact is incomplete without its ratio, distribution, or key qualifier.
+   Trigger: Scale → include read/write ratio. Latency → include P50 vs P99 distinction.
+   ✅ [CONTEXT:About a million DAU, mostly reads — roughly 100:1 ratio.][Q:What else do you need?]
+   ❌ [CONTEXT:A million DAU.][Q:What else?]  ← bare fact belongs in [ACK:], not [CONTEXT:]
+
+3. **Weak candidate launching pad**: Frame + concrete options when candidate is lost on a component choice.
+   ✅ [CONTEXT:For this scale, most teams reach for DynamoDB or Cassandra.][Q:What are you leaning toward?]
+   ❌ [CONTEXT:Use DynamoDB.][Q:Why?]  ← answering for them — forbidden
+   ❌ [CONTEXT:Think about your storage options.][Q:What would you use?]  ← too vague
+
+4. **Phase transition setup**: When moving to a new phase but NOT recapping constraints.
+   - [SUMMARY:] = recap locked constraints from last phase (e.g., "10K writes, fraud first.")
+   - [CONTEXT:] = set the mindset/tone for next phase when there's nothing to recap
+   ✅ [CONTEXT:Let's stress-test what you've built.][Q:What breaks first under 10x load?]
+   ❌ [CONTEXT:We've locked 10K writes, fraud first.][Q:Approach?]  ← that's [SUMMARY:], not [CONTEXT:]
+
+**Limits**: 1-2 sentences MAX. No lectures. Still conversational.
+**NOT allowed**: Normal probing turns, deep dive turns, strong candidate turns (unless failure/scope exception applies).
 
 **EXAMPLES**:
 
@@ -724,12 +764,27 @@ Answering a genuine clarifying question (scope phase):
 Deflecting validation-seeking:
 [PHASE:scope][ACK:That's your call.][Q:What about consistency requirements?]
 
+FAILURE phase — scenario setup:
+[PHASE:failure][CONTEXT:Assume your primary database region just went down.][Q:What breaks first?][LISTEN:Testing failure isolation awareness]
+
+Weak candidate launching pad — technology options:
+[PHASE:architecture][CONTEXT:For a URL shortener at this scale, most teams reach for DynamoDB or Cassandra.][Q:What are you leaning toward?][LISTEN:Watching for a reasoned choice][FOLLOWUP:Why that one specifically?]
+
+SCOPE answer with context (candidate asked about scale):
+[PHASE:scope][CONTEXT:About a million DAU, mostly reads — roughly 100:1 ratio.][Q:What else do you want to clarify?][LOCK:scale_daily_users=1M][LOCK:read_write_ratio=100:1]
+
 **BAD EXAMPLES (never do these)**:
 [ACK:That's a really interesting point you raised there]  ← too verbose
 [Q:I'm curious about how you would approach the database scaling challenge]  ← too long
 Got it. What about latency?  ← prose outside tags — NEVER output text outside tags
+[CONTEXT:Microservices are a common pattern for distributed systems where each service owns its own data and communicates via APIs which allows for independent deployment.]  ← too long, more than 2 sentences, lecture-y
+[PHASE:architecture][CONTEXT:You might want to think about caching here.][Q:What would you cache?]  ← not an allowed situation (normal probing turn — just use [Q:] directly)
+[PHASE:architecture][CONTEXT:Use DynamoDB.][Q:Why?]  ← answers for the candidate — forbidden
+[PHASE:deep_dive][CONTEXT:Let me explain how consistent hashing works.][Q:How would you apply it?]  ← teaching, not interviewing — NEVER explain concepts to the candidate
+[CONTEXT:That's a good approach.][Q:What about caching?]  ← this should be [ACK:], not [CONTEXT:]
 
 **CRITICAL**: Vary the pattern. If you've used [ACK:...][Q:...] for 2 turns in a row, skip [ACK:...] on turn 3. Make the pattern unpredictable.
+- **[CONTEXT:] is rare** — only FAILURE scenario setup, SCOPE answers with context, weak candidate launching pads. Most turns: no [CONTEXT:].
 """
     
     def should_transition_scope_to_architecture(self, state: SessionState) -> bool:
