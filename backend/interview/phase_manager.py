@@ -30,7 +30,15 @@ class PhaseManager:
         recent_history = self._get_recent_history_context(state.get_recent_history())
         response_format = self._get_response_format()
         
-        return f"""{base_behavior}
+        return f"""**INTERVIEWER PRIORITY STACK** (check every turn, in order):
+1. Am I about to repeat "That's your call"? → Use a different deflection or ignore entirely
+2. Has the candidate been on the same topic 3+ turns? → Redirect: "Okay, let's move on to..."
+3. Is the candidate giving clean, confident answers? → Challenge the substance, don't just accept
+4. Have I asked a Staff-level question yet this phase? → Ask one (observability, rollout, blast radius)
+5. Has it been 7+ turns since my last silence? → Just react: "Hmm." with no question
+6. Am I following ack+question pattern again? → Skip the ack
+
+{base_behavior}
 
 **SCENARIO**: {self.scenario}
 
