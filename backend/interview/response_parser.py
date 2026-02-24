@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 # Tags that are spoken aloud (sent to TTS)
-_SPOKEN_TAGS = {"ACK", "Q", "SUMMARY"}
+_SPOKEN_TAGS = {"ACK", "Q", "SUMMARY", "CONTEXT"}
 
 # Tags that update state internally (never spoken)
 _INTERNAL_TAGS = {"PHASE", "LOCK", "LISTEN", "FOLLOWUP"}
@@ -94,6 +94,12 @@ class StreamingResponseParser:
 
             elif tag == "ACK":
                 # Suppress ACK if SUMMARY already spoken this turn
+                if not self._has_summary:
+                    self._spoken_parts.append(value)
+                    spoken_output.append(value)
+
+            elif tag == "CONTEXT":
+                # Suppress CONTEXT if SUMMARY already spoken this turn (same rule as ACK)
                 if not self._has_summary:
                     self._spoken_parts.append(value)
                     spoken_output.append(value)
