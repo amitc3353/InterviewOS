@@ -285,11 +285,11 @@ async def entrypoint(ctx: JobContext):
         logger.info("Interviewer interrupted by candidate — listening")
 
     @session.on("session_end")
-    async def on_session_end():
+    def on_session_end():
         """Fallback: score partial interviews if WRAP was never reached."""
         if not interview_agent._scoring_triggered:
             interview_agent._scoring_triggered = True
-            await interview_agent._generate_scorecard()
+            asyncio.create_task(interview_agent._generate_scorecard())
     
     # Send initial greeting using session.generate_reply
     await session.generate_reply(
