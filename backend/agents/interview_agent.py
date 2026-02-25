@@ -56,6 +56,10 @@ class InterviewAgent(Agent):
         self._scoring_triggered = False
         self._scoring_engine = ScoringEngine()
 
+        # Track if INTRO/FAILURE was interrupted before critical content was presented
+        self._intro_interrupted: bool = False
+        self._failure_setup_interrupted: bool = False
+
         # Track user input for history
         self.pending_user_input = None
         
@@ -103,6 +107,25 @@ class InterviewAgent(Agent):
 
         # --- Inject phase-aware system prompt (unchanged logic) ---
         system_prompt = self.phase_manager.get_system_prompt(self.interview_session.state)
+        current_phase = self.interview_session.state.phase
+        if self._intro_interrupted:
+            if current_phase == InterviewPhase.INTRO:
+                system_prompt += (
+                    "\n\n**RECOVERY CONTEXT**: Your previous turn was interrupted — "
+                    "the candidate has NOT heard the full scenario. "
+                    f'The scenario is: "{self.scenario}". '
+                    "Re-state it naturally before asking for clarifying questions. "
+                    "Do NOT ask the candidate what system they are designing."
+                )
+            self._intro_interrupted = False
+        if self._failure_setup_interrupted:
+            if current_phase == InterviewPhase.FAILURE:
+                system_prompt += (
+                    "\n\n**RECOVERY CONTEXT**: Your previous failure scenario setup was "
+                    "interrupted — the candidate may not have heard the full premise. "
+                    "Re-state the failure scenario before asking about its impact."
+                )
+            self._failure_setup_interrupted = False
         if chat_ctx.items and len(chat_ctx.items) > 0:
             chat_ctx.items[0] = llm.ChatMessage(role="system", content=[system_prompt])
         else:
@@ -283,6 +306,13 @@ async def entrypoint(ctx: JobContext):
     @session.on("agent_speech_interrupted")
     def on_interrupted():
         logger.info("Interviewer interrupted by candidate — listening")
+        phase = interview_agent.interview_session.state.phase
+        if phase == InterviewPhase.INTRO:
+            interview_agent._intro_interrupted = True
+            logger.info("Interrupted during INTRO — will recover scenario on next turn")
+        elif phase == InterviewPhase.FAILURE:
+            interview_agent._failure_setup_interrupted = True
+            logger.info("Interrupted during FAILURE — will recover scenario setup on next turn")
 
     @session.on("session_end")
     def on_session_end():
