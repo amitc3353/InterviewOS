@@ -136,10 +136,21 @@ class StreamingResponseParser:
             return spoken or None
 
         # Tag mode: anything left in buffer after all tags were processed
-        # is likely stray text or a truncated tag — discard safely
+        # is likely stray text or a truncated tag.
         remaining = self.buffer.strip()
         if remaining and not remaining.startswith("["):
-            logger.warning(f"Discarding stray text outside tags: {remaining[:60]!r}")
+            if not self._spoken_parts:
+                # LLM returned a response with no tag formatting at all.
+                # Speak it verbatim rather than silencing the interview.
+                logger.warning(
+                    f"No-tag response — using as spoken fallback: {remaining[:60]!r}"
+                )
+                self._spoken_parts.append(remaining)
+                self.buffer = ""
+                return remaining
+            else:
+                # Trailing text after the last tag — discard safely.
+                logger.warning(f"Discarding stray text outside tags: {remaining[:60]!r}")
         self.buffer = ""
         return None
 

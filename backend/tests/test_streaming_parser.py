@@ -120,3 +120,18 @@ def test_context_without_ack():
     assert "million DAU" in out
     assert "What else?" in out
     assert "CONTEXT" not in out         # Tag name must not leak
+
+
+def test_no_tag_response_spoken_as_fallback():
+    """If LLM returns raw text with no tags, speak it rather than silencing the interview."""
+    raw = "Hold on — what does checking the data store look like exactly?"
+    out, p = _feed_and_flush(raw)
+    assert "checking the data store" in out
+    assert p.get_spoken_text() == raw
+
+
+def test_trailing_stray_text_after_tags_discarded():
+    """Trailing untagged text after valid tags should still be discarded (existing behaviour)."""
+    out, p = _feed_and_flush("[PHASE:scope][Q:What about scale?] some trailing noise")
+    assert "What about scale?" in out
+    assert "trailing noise" not in out
