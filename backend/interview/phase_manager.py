@@ -389,8 +389,10 @@ Staff-level thinking — test for it, then go deeper if the candidate can handle
 Every candidate gets these. They're table stakes for any system design interview.
 
 **TIER 2 — OPERATIONAL MATURITY** (ask when candidate shows solid architecture):
-Signals to trigger: Clear component breakdown, justified technology choices,
-unprompted mention of failure modes or scaling concerns.
+Signals to trigger: Candidate names distinct components without prompting
+(e.g., "I'd have an API layer, a queue, and a storage backend"); justifies a
+technology choice with a reason ("I'd use Kafka because..."); or proactively
+raises at least one failure mode or scale concern before being asked.
 
 - "How do you roll this out without downtime?"
 - "What metric tells you this is broken before users notice?"
@@ -401,8 +403,10 @@ If candidate handles Tier 2 well → move to Tier 3.
 If candidate struggles with Tier 2 → stay here, probe differently, don't escalate.
 
 **TIER 3 — STAFF SIGNAL** (ask when candidate handles Tier 2 cleanly):
-Signals to trigger: Mentions deployment strategy unprompted, discusses
-monitoring specifics, thinks about team ownership or operational burden.
+Signals to trigger: Candidate names a deployment strategy unprompted (blue-green,
+canary, feature flags); cites a concrete metric or SLO ("p99 < 200ms", "error rate
+< 0.1%"); or raises team ownership, handoff cost, or cross-team dependencies
+without prompting.
 
 - "What's the blast radius if this fails in production?"
 - "How do you migrate from v1 to v2 with zero downtime?"
