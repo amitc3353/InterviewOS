@@ -1,0 +1,58 @@
+id: rate-limiter
+name: "Design a Rate Limiter"
+archetype: "platform-infra"
+description: |
+  Design a distributed rate limiting system that prevents API abuse
+  by limiting requests per user, per IP, or per API key. Support
+  different rate limit rules (requests per second, per minute, per hour)
+  and provide clear feedback to clients when limits are exceeded.
+
+complexity_notes: |
+  This appears simple but has depth in distributed counter consistency.
+  Push toward: token bucket vs sliding window algorithms, distributed counter
+  synchronization, clock skew handling, rate limit rule configuration,
+  and graceful degradation when Redis is down.
+
+scope_answers:
+  requests_per_second: "100,000 requests/sec globally"
+  api_keys: "1 million API keys to track"
+  latency: "What overhead is acceptable?"
+  limits: "Support per-second, per-minute, per-hour limits"
+  accuracy: "What consistency model for distributed counters?"
+  redis: "Yes, use Redis for counter storage"
+  fail_mode: "What happens if Redis goes down?"
+  feedback: "Return 429 status with Retry-After header"
+
+critical_components:
+  - name: "Rate limit algorithm (token bucket vs sliding window)"
+    why: "Trade-offs between memory, accuracy, and burst handling"
+  - name: "Distributed counter synchronization"
+    why: "Handling race conditions, clock skew, eventual consistency"
+  - name: "Redis architecture"
+    why: "Key design, expiration, persistence, cluster vs single node"
+
+low_priority_components:
+  - "Admin UI for configuring limits"
+  - "Analytics dashboard"
+  - "Alert system for abuse detection"
+
+failure_scenarios:
+  - scenario: "Redis cluster goes down"
+    focus: "Fail-open vs fail-closed trade-offs, local in-memory fallback"
+  - scenario: "Clock skew between servers causes inconsistent rate limiting"
+    focus: "Timestamp synchronization, using Redis TIME command"
+  - scenario: "Attacker uses 10K different IP addresses to bypass per-IP limits"
+    focus: "Multi-dimensional rate limiting (IP + user + fingerprint)"
+  - scenario: "Redis memory fills up due to too many keys"
+    focus: "Key expiration strategy, memory eviction policy, capacity planning"
+
+deep_dive_focus:
+  - component: "Rate limit algorithm implementation"
+    why: "Token bucket, leaky bucket, sliding window log, sliding window counter"
+  - component: "Distributed counter correctness"
+    why: "Lua scripts for atomicity, race conditions, eventual consistency"
+
+scoring_benchmarks:
+  exceptional: "Compares token bucket vs sliding window trade-offs, implements atomic Lua script for counter updates, addresses distributed clock skew, discusses fail-open vs fail-closed with reasoning"
+  solid: "Mentions Redis with counter increments, TTL for expiration, basic token bucket algorithm, but lacks depth on distributed consistency"
+  weak: "Treats it like a simple counter check with no discussion of algorithms, distribution challenges, or failure modes"

@@ -1,0 +1,59 @@
+id: real-time-chat
+name: "Design a Real-Time Chat System"
+archetype: "real-time-streaming"
+description: |
+  Design a real-time chat system like Slack or WhatsApp. Support one-on-one
+  messaging, group chats, message history, read receipts, typing indicators,
+  and user presence (online/offline status). Messages should be delivered
+  in real-time with sub-second latency.
+
+complexity_notes: |
+  At Staff level, this is about maintaining consistency in a distributed real-time system.
+  Push toward: message ordering guarantees, WebSocket connection management at scale,
+  presence system challenges, message history storage/retrieval, and offline message
+  delivery.
+
+scope_answers:
+  users: "10 million daily active users"
+  concurrent_connections: "1 million concurrent WebSocket connections"
+  messages_per_second: "100,000 messages/sec globally"
+  latency: "What would you target for message delivery?"
+  message_history: "Store full history, retrieve last 100 messages on load"
+  delivery_guarantees: "At-least-once delivery, ordered per sender"
+  presence: "Show online/offline/away status in real-time"
+  typing_indicators: "Show 'User is typing...' in real-time"
+  attachments: "Support images, files up to 100MB"
+
+critical_components:
+  - name: "WebSocket connection manager"
+    why: "Managing millions of connections, heartbeats, reconnection, load balancing"
+  - name: "Message ordering and delivery"
+    why: "Guaranteeing order per sender, handling offline users, delivery confirmation"
+  - name: "Presence system"
+    why: "Tracking user status, heartbeat mechanism, propagating status updates"
+
+low_priority_components:
+  - "User authentication"
+  - "File upload service"
+  - "Notification service"
+
+failure_scenarios:
+  - scenario: "WebSocket server crashes with 100K active connections"
+    focus: "Connection failover, message loss prevention, reconnection storm"
+  - scenario: "Messages arrive out of order for users in different regions"
+    focus: "Message ordering guarantees, vector clocks, sequence numbers"
+  - scenario: "Presence system shows users as online after they've disconnected"
+    focus: "Heartbeat mechanism, timeout tuning, zombie connection detection"
+  - scenario: "Database can't keep up with message history writes during peak"
+    focus: "Write buffering, batch writes, async persistence, message queue backpressure"
+
+deep_dive_focus:
+  - component: "WebSocket architecture at scale"
+    why: "Connection pooling, stateful vs stateless servers, horizontal scaling"
+  - component: "Message ordering guarantees"
+    why: "Lamport timestamps, vector clocks, sequence numbers per conversation"
+
+scoring_benchmarks:
+  exceptional: "Designs stateless WebSocket layer with sticky sessions, implements sequence numbers for ordering, addresses presence heartbeat tuning and zombie connections, discusses message queue for offline delivery"
+  solid: "Mentions WebSocket servers with pub/sub (Redis), basic message storage in DB, presence via heartbeats, but lacks depth on ordering and failover"
+  weak: "Treats it like HTTP polling with a database, no discussion of WebSocket challenges, message ordering, or presence system"

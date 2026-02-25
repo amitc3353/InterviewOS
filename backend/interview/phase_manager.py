@@ -18,9 +18,10 @@ class PhaseManager:
         InterviewPhase.WRAP: 2 * 60,            # 2 min
     }
     
-    def __init__(self, scenario: str):
-        """Initialize phase manager with scenario."""
+    def __init__(self, scenario: str, scenario_metadata=None):
+        """Initialize phase manager with scenario text and optional metadata."""
         self.scenario = scenario
+        self.scenario_metadata = scenario_metadata
     
     def get_system_prompt(self, state: SessionState) -> str:
         """Generate complete system prompt with all INTERVIEWER_BEHAVIOR rules."""
@@ -601,7 +602,7 @@ NOT every turn. Mix casual with direct. Unpredictability is the goal.
   for clarifying questions. Never ask the candidate what system to design.
 """,
             
-            InterviewPhase.SCOPE: """**SCOPE PHASE** (5-10 min, ~3-4 turns minimum):
+            InterviewPhase.SCOPE: f"""**SCOPE PHASE** (5-10 min, ~3-4 turns minimum):
 
 **YOUR ROLE IN THIS PHASE: You are the "product manager" who knows the requirements.**
 The candidate should be ASKING YOU questions to scope the problem. You ANSWER them.
@@ -655,8 +656,7 @@ This teaches them the right behavior without doing it for them.
 Let them drive. Answer their questions. Occasionally add: "Good question. What else?"
 This is the IDEAL flow — candidate asks, you answer, they build understanding.
 
-**SCENARIO-SPECIFIC REQUIREMENTS** (your prepared answers for this interview):
-Have reasonable answers ready. If the candidate asks something you don't have a prepared answer for, say "That's up to you — make a reasonable assumption and we'll go with it."
+{self._get_scope_prepared_answers()}
 
 **MISSING REQUIREMENTS CHECK** (before transitioning):
 If the candidate hasn't asked about these key areas, nudge them:
@@ -681,7 +681,10 @@ Don't interrogate them. Instead: "Good questions so far. Anything else before we
 - They signal readiness: "I think I have enough to start" or naturally start proposing design
 """,
             
-            InterviewPhase.ARCHITECTURE: """**ARCHITECTURE PHASE** (10-15 min):
+            InterviewPhase.ARCHITECTURE: f"""**ARCHITECTURE PHASE** (10-15 min):
+
+{self._get_depth_guidance()}
+
 - Let candidate propose high-level architecture
 - Ask about API design, data models, core components
 - Probe on initial design choices: "Why X over Y?"
@@ -733,7 +736,10 @@ Then move on. Don't give equal time to everything.
 - Ready to zoom into implementation details
 """,
             
-            InterviewPhase.DEEP_DIVE: """**DEEP_DIVE PHASE** (10 min):
+            InterviewPhase.DEEP_DIVE: f"""**DEEP_DIVE PHASE** (10 min):
+
+{self._get_depth_guidance()}
+
 - Pick 1-2 critical components and go deep
 - Ask about implementation details: "How will you handle cache invalidation?"
 - Probe edge cases: "What if two users update simultaneously?"
@@ -785,19 +791,12 @@ Show you remember the architecture discussion. Connect the dots.
 - Time to stress-test the design
 """,
             
-            InterviewPhase.FAILURE: """**FAILURE PHASE** (5-10 min):
+            InterviewPhase.FAILURE: f"""**FAILURE PHASE** (5-10 min):
 
 **YOUR ROLE SHIFTS HERE: You become adversarial (constructively).**
 Introduce NEW constraints and failure scenarios the candidate hasn't considered:
 
-**Introduce new constraints** (pick 2-3 relevant to the scenario):
-* Traffic spikes: "Assume one link goes viral — 50x normal traffic in 10 minutes."
-* Infrastructure failure: "Your primary database region goes down."
-* Scale jump: "Traffic doubles overnight. What breaks first?"
-* Edge cases: "What if someone creates a billion short links to exhaust your keyspace?"
-* Compliance: "Now assume we need to comply with GDPR. What changes?"
-* Multi-tenancy: "What if enterprise customers need dedicated short domains?"
-* Cost pressure: "Your cloud bill just tripled. Where do you cut?"
+{self._get_failure_scenarios_guidance()}
 
 **HOW TO INTRODUCE FAILURE SCENARIOS — USE [CONTEXT:] TO SET THE SCENE**:
 Don't jump straight to the question. State the failure as fact, then ask about its impact.
@@ -855,7 +854,79 @@ Don't be mean. Be a skeptical peer who's seen production systems break.
 """
         }
         return instructions.get(phase, "")
-    
+
+    def _get_scope_prepared_answers(self) -> str:
+        """Generate SCOPE phase prepared answers from scenario metadata."""
+        if not self.scenario_metadata or not self.scenario_metadata.scope_answers:
+            # Fallback to generic guidance
+            return """**SCENARIO-SPECIFIC REQUIREMENTS** (your prepared answers for this interview):
+Have reasonable answers ready. If the candidate asks something you don't have a prepared answer for,
+say "That's up to you — make a reasonable assumption and we'll go with it." """
+
+        lines = ["**YOUR PREPARED ANSWERS FOR THIS SCENARIO:**"]
+        lines.append("When the candidate asks about requirements, use these:")
+        lines.append("")
+
+        for topic, answer in self.scenario_metadata.scope_answers.items():
+            lines.append(f"- {topic}: \"{answer}\"")
+
+        lines.append("")
+        lines.append("For anything not listed: \"That's up to you — make a reasonable assumption.\"")
+
+        return "\n".join(lines)
+
+    def _get_depth_guidance(self) -> str:
+        """Generate depth guidance for ARCHITECTURE and DEEP_DIVE phases."""
+        if not self.scenario_metadata:
+            return ""
+
+        lines = ["**DEPTH GUIDANCE FOR THIS SCENARIO:**"]
+        lines.append("")
+
+        if self.scenario_metadata.critical_components:
+            lines.append("Spend 3-4 turns on these (most important):")
+            for c in self.scenario_metadata.critical_components:
+                lines.append(f"- {c['name']} — {c['why']}")
+            lines.append("")
+
+        if self.scenario_metadata.low_priority_components:
+            lines.append("Spend 1 turn or skip:")
+            for c in self.scenario_metadata.low_priority_components:
+                lines.append(f"- {c}")
+            lines.append("")
+
+        if self.scenario_metadata.complexity_notes:
+            lines.append("**WHERE THE DEPTH IS:**")
+            lines.append(self.scenario_metadata.complexity_notes)
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _get_failure_scenarios_guidance(self) -> str:
+        """Generate FAILURE phase scenarios from metadata."""
+        if not self.scenario_metadata or not self.scenario_metadata.failure_scenarios:
+            # Fallback to generic examples
+            return """**Introduce new constraints** (pick 2-3 relevant to the scenario):
+* Traffic spikes: "Assume one link goes viral — 50x normal traffic in 10 minutes."
+* Infrastructure failure: "Your primary database region goes down."
+* Data corruption: "You detect that 5% of recent writes have incorrect data."
+* Third-party outage: "Your CDN goes down for 30 minutes."
+* Security incident: "You detect a DDoS attack targeting your API." """
+
+        lines = ["**FAILURE SCENARIOS FOR THIS SCENARIO** (pick 2-3):"]
+        lines.append("")
+
+        for i, fs in enumerate(self.scenario_metadata.failure_scenarios, 1):
+            lines.append(f"{i}. Scenario: \"{fs['scenario']}\"")
+            lines.append(f"   Focus areas: {fs['focus']}")
+            lines.append("")
+
+        lines.append("""Pick 2-3 of these. Present each using [CONTEXT:] for the setup, then [Q:]
+for your probe. Adapt your question to what the candidate has actually designed —
+don't use canned questions.""")
+
+        return "\n".join(lines)
+
     def _get_locked_constraints_context(self, constraints: Dict[str, str]) -> str:
         """Format locked constraints for LLM prompt."""
         if not constraints:
