@@ -27,13 +27,14 @@ class InterviewAgent(Agent):
     Uses LiveKit Agents 1.0 API with llm_node and tts_node overrides.
     """
     
-    def __init__(self, config: AgentConfig, scenario: str):
+    def __init__(self, config: AgentConfig, scenario: str, scenario_metadata=None):
         """
         Initialize interview agent.
-        
+
         Args:
             config: Agent configuration
             scenario: Interview scenario (e.g., "Design a payment gateway")
+            scenario_metadata: Optional ScenarioMetadata object with rich scenario information
         """
         # Minimal placeholder instructions - real instructions come from phase_manager.get_system_prompt()
         # injected in llm_node to prevent competing system prompts
@@ -41,16 +42,17 @@ class InterviewAgent(Agent):
 
         # Initialize parent Agent class
         super().__init__(instructions=instructions)
-        
+
         self.config = config
         self.scenario = scenario
-        
+        self.scenario_metadata = scenario_metadata
+
         # Create interview session (renamed to avoid collision with Agent.session property)
         session_id = str(uuid.uuid4())
         self.interview_session = InterviewSession(session_id=session_id, scenario=scenario)
-        
+
         # Initialize interview engine components
-        self.phase_manager = PhaseManager(scenario)
+        self.phase_manager = PhaseManager(scenario, scenario_metadata)
 
         # Scoring
         self._scoring_triggered = False
@@ -264,15 +266,36 @@ async def entrypoint(ctx: JobContext):
     config = AgentConfig.from_env()
     
     # Get scenario from job metadata or use default
-    # Note: metadata is a string, not a dict - parse safely
-    scenario = "Design a URL shortener"
+    from ..interview.scenario_loader import ScenarioLoader
+    import json
+
+    # Initialize scenario loader
+    scenario_loader = ScenarioLoader()
+    logger.info(f"Loaded {len(scenario_loader._scenarios)} scenarios")
+
+    # Parse job metadata — frontend sends JSON with scenario ID
+    scenario_text = "Design a URL Shortener"
+    scenario_metadata = None
+
     if hasattr(ctx.job, 'metadata') and ctx.job.metadata:
-        # Metadata is a string - use it directly if it looks like a scenario
-        if isinstance(ctx.job.metadata, str) and len(ctx.job.metadata) > 5:
-            scenario = ctx.job.metadata
-    
+        try:
+            # Try parsing as JSON: {"scenario": "url-shortener"}
+            metadata_dict = json.loads(ctx.job.metadata)
+            scenario_id = metadata_dict.get("scenario", "url-shortener")
+
+            # Load scenario
+            scenario_metadata = scenario_loader.get_scenario(scenario_id)
+            scenario_text = scenario_metadata.name
+            logger.info(f"Selected scenario: {scenario_metadata.id} (archetype: {scenario_metadata.archetype})")
+
+        except (json.JSONDecodeError, Exception) as e:
+            # Fallback: treat as literal scenario text for backward compatibility
+            logger.warning(f"Failed to parse job metadata as JSON, using as literal text: {e}")
+            if isinstance(ctx.job.metadata, str) and len(ctx.job.metadata) > 5:
+                scenario_text = ctx.job.metadata
+
     # Create interview agent
-    interview_agent = InterviewAgent(config, scenario)
+    interview_agent = InterviewAgent(config, scenario_text, scenario_metadata)
     
     # Create agent session
     session = AgentSession(

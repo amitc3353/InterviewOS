@@ -1,0 +1,59 @@
+id: news-feed
+name: "Design a News Feed"
+archetype: "feed-timeline"
+description: |
+  Design a social media news feed system like Twitter or Facebook feed.
+  Users follow other users and see posts from people they follow in
+  chronological or ranked order. Support creating posts, viewing feed,
+  and basic interactions (likes, comments).
+
+complexity_notes: |
+  At Staff level, this is about fanout strategies and ranking at massive scale.
+  Push toward: push vs pull fanout trade-offs, celebrity user handling,
+  ranking algorithm real-time updates, cache invalidation cascades,
+  and feed consistency models.
+
+scope_answers:
+  users: "100 million monthly active users"
+  follows_per_user: "Average 500 follows, max 10,000"
+  posts_per_day: "10 million new posts per day"
+  latency: "What would you target for feed load?"
+  consistency: "What consistency model makes sense?"
+  ranking: "Reverse chronological first, then ranked by engagement"
+  interactions: "Likes, comments, shares — all counted for ranking"
+  celebrities: "Some users have millions of followers"
+  real_time: "Feed updates should appear within 30 seconds"
+
+critical_components:
+  - name: "Fanout service (push vs pull)"
+    why: "Write-time fanout (push) vs read-time fanout (pull), hybrid approaches for celebrities"
+  - name: "Ranking algorithm"
+    why: "Scoring posts by recency, engagement, user affinity; personalization"
+  - name: "Cache layer architecture"
+    why: "Pre-computed feeds in Redis, invalidation strategy, cache stampede prevention"
+
+low_priority_components:
+  - "Media upload service"
+  - "User profile management"
+  - "Notification service"
+
+failure_scenarios:
+  - scenario: "A celebrity with 10M followers posts — your fanout system crashes"
+    focus: "Celebrity user handling, async fanout, queue backpressure"
+  - scenario: "Ranking ML model starts showing week-old posts at the top"
+    focus: "Model rollback, A/B testing, graceful degradation to chronological"
+  - scenario: "Cache invalidation fails — users see stale feed for hours"
+    focus: "Cache consistency, TTL strategy, invalidation patterns"
+  - scenario: "Feed load takes 5 seconds during peak hours"
+    focus: "Read path optimization, database hotspots, caching strategy"
+
+deep_dive_focus:
+  - component: "Fanout architecture (push/pull/hybrid)"
+    why: "Write amplification vs read amplification, celebrity user problem"
+  - component: "Feed ranking and scoring"
+    why: "Real-time scoring, batch vs online ML, feature freshness"
+
+scoring_benchmarks:
+  exceptional: "Discusses hybrid fanout (push for regular users, pull for celebrities), addresses write amplification math, implements materialized views with incremental updates, handles ranking model staleness"
+  solid: "Mentions fanout-on-write with queues, basic ranking by timestamp + engagement, caching strategy, but lacks depth on celebrity problem"
+  weak: "Treats it like a simple SQL query with ORDER BY, no discussion of fanout strategies or ranking complexity"

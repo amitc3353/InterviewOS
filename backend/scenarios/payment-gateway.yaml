@@ -1,0 +1,59 @@
+id: payment-gateway
+name: "Design a Payment Gateway"
+archetype: "transactional"
+description: |
+  Design a payment processing system that handles credit card transactions,
+  supports multiple payment methods (credit cards, digital wallets, bank transfers),
+  and ensures PCI compliance and fraud detection.
+
+complexity_notes: |
+  At Staff level, this is about handling money at scale with zero tolerance for errors.
+  Push toward: idempotency keys, distributed transactions, reconciliation systems,
+  fraud detection ML pipelines, PCI compliance zones, chargeback handling,
+  and multi-currency settlement.
+
+scope_answers:
+  transactions_per_second: "10,000 TPS at peak"
+  daily_volume: "$50 million in transactions"
+  payment_methods: "Credit cards, debit cards, PayPal, Apple Pay, Google Pay"
+  latency: "What would you target?"
+  consistency: "Strong consistency required for all money movement"
+  availability: "What would you choose?"
+  fraud_detection: "Real-time fraud scoring before authorization"
+  compliance: "PCI DSS Level 1 compliance required"
+  currencies: "Support 20+ currencies with real-time FX rates"
+  refunds: "Refunds and chargebacks must be handled"
+
+critical_components:
+  - name: "Transaction state machine"
+    why: "Pending → authorized → captured → settled flow, idempotency, exactly-once semantics"
+  - name: "Fraud detection pipeline"
+    why: "Real-time ML scoring, rule engine, velocity checks, device fingerprinting"
+  - name: "Reconciliation system"
+    why: "Daily reconciliation with banks, detecting missing/duplicate transactions"
+
+low_priority_components:
+  - "Admin dashboard UI"
+  - "Email notification system"
+  - "Customer support tools"
+
+failure_scenarios:
+  - scenario: "Fraud detection system flags 30% of legitimate transactions as suspicious"
+    focus: "False positive handling, manual review queue, revenue impact"
+  - scenario: "Bank API goes down mid-transaction"
+    focus: "Transaction rollback, retry logic, customer communication"
+  - scenario: "You detect $100K in fraudulent transactions after they cleared"
+    focus: "Fraud detection gaps, chargeback process, preventing future fraud"
+  - scenario: "Database write succeeds but response times out — money debited twice"
+    focus: "Idempotency implementation, distributed transaction handling"
+
+deep_dive_focus:
+  - component: "Idempotency and exactly-once processing"
+    why: "Prevent double-charging, handle retries safely"
+  - component: "Fraud detection architecture"
+    why: "Real-time vs batch scoring, model deployment, feedback loops"
+
+scoring_benchmarks:
+  exceptional: "Designs robust idempotency with deduplication keys, implements saga pattern for distributed transactions, addresses PCI compliance zones, includes reconciliation system"
+  solid: "Mentions idempotency keys, basic fraud checks, database transactions, but lacks depth on edge cases like partial failures"
+  weak: "Treats it like CRUD with a payment API call, no mention of idempotency, reconciliation, or compliance"

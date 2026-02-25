@@ -1,0 +1,59 @@
+id: url-shortener
+name: "Design a URL Shortener"
+archetype: "crud-metadata"
+description: |
+  Design a URL shortening service like bit.ly. The system should
+  accept long URLs and generate short codes, redirect users when
+  they visit short URLs, and track basic click analytics.
+
+complexity_notes: |
+  At Staff level, this goes beyond basic key-value storage.
+  Push toward: distributed ID generation strategies, keyspace
+  exhaustion math, cache stampede handling, and geographic
+  routing for custom domains.
+
+scope_answers:
+  users: "About a million DAU."
+  creates_per_day: "A million creates per day."
+  read_write_ratio: "Reads are way higher — probably 100:1."
+  latency: "What would you target?"
+  consistency: "Eventual consistency for analytics, strong for creation."
+  availability: "What would you choose?"
+  custom_urls: "Yes, users should be able to pick custom aliases."
+  analytics: "Basic click analytics. Keep it simple."
+  expiration: "Links last indefinitely unless users delete them."
+  geography: "Assume global — users everywhere."
+
+critical_components:
+  - name: "Short code generation"
+    why: "Collision handling, keyspace exhaustion, distributed ID generation"
+  - name: "Database sharding"
+    why: "Partition key selection, hotspot detection, rebalancing"
+  - name: "Cache layer design"
+    why: "Eviction policy, stampede prevention, consistency with DB"
+
+low_priority_components:
+  - "Load balancer"
+  - "CDN configuration"
+  - "Basic API endpoint design"
+
+failure_scenarios:
+  - scenario: "One link goes viral — 50x normal traffic in 10 minutes"
+    focus: "Cache stampede, hotspot handling, rate limiting"
+  - scenario: "Primary database region goes down"
+    focus: "Failover time, data replication lag, read-replica promotion"
+  - scenario: "Someone creates a billion short links to exhaust keyspace"
+    focus: "Rate limiting, keyspace math, abuse detection"
+  - scenario: "Your cloud bill just tripled overnight"
+    focus: "Cost optimization, caching strategy, over-provisioning"
+
+deep_dive_focus:
+  - component: "Short code generation"
+    why: "Collision handling, keyspace exhaustion, distributed ID generation"
+  - component: "Database sharding"
+    why: "Sharding key selection, hotspot detection, rebalancing"
+
+scoring_benchmarks:
+  exceptional: "Pre-computes keyspace math, addresses collision probability, implements distributed ID generation, handles cache stampede with request coalescing"
+  solid: "Mentions base62 encoding, basic sharding, cache with TTL, but lacks depth on edge cases"
+  weak: "Treats it like a simple CRUD app, no mention of collision handling or scaling strategy"
