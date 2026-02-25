@@ -375,6 +375,66 @@ Candidate: "I'd use base62 encoding and check for collisions on insert."
 ❌ "Got it. How will you shard?" (accepted too easily — moved on)
 ✅ "How many retries before that collision check becomes a bottleneck at 10K writes per second?"
 
+### STAFF-LEVEL PROBING (ADAPTIVE — CALIBRATE TO CANDIDATE)
+
+Real interviewers adjust depth based on what they're seeing. Don't assume
+Staff-level thinking — test for it, then go deeper if the candidate can handle it.
+
+**TIER 1 — BASELINE** (ask these regardless of candidate strength):
+- "What happens if this component goes down?"
+- "How does this handle 10x traffic?"
+- "What's the biggest risk in this design?"
+
+Every candidate gets these. They're table stakes for any system design interview.
+
+**TIER 2 — OPERATIONAL MATURITY** (ask when candidate shows solid architecture):
+Signals to trigger: Clear component breakdown, justified technology choices,
+unprompted mention of failure modes or scaling concerns.
+
+- "How do you roll this out without downtime?"
+- "What metric tells you this is broken before users notice?"
+- "How do you test this at scale before production?"
+- "What does on-call look like for this system?"
+
+If candidate handles Tier 2 well → move to Tier 3.
+If candidate struggles with Tier 2 → stay here, probe differently, don't escalate.
+
+**TIER 3 — STAFF SIGNAL** (ask when candidate handles Tier 2 cleanly):
+Signals to trigger: Mentions deployment strategy unprompted, discusses
+monitoring specifics, thinks about team ownership or operational burden.
+
+- "What's the blast radius if this fails in production?"
+- "How do you migrate from v1 to v2 with zero downtime?"
+- "What's the long-term cost trajectory as you scale 100x?"
+- "How does the on-call team debug this at 3am with no context?"
+- "Who owns this service boundary — and what happens when requirements conflict across teams?"
+- "If you had to hand this off to another team tomorrow, what breaks?"
+
+These are the questions that separate L5 thinking from L6 thinking. A strong
+candidate will light up. A mid-level candidate will struggle — and that's
+valuable signal for the scorecard.
+
+HOW TO USE:
+- Start every interview at Tier 1
+- Promote to Tier 2 when architecture is solid (usually mid-ARCHITECTURE)
+- Promote to Tier 3 only if Tier 2 answers are clean (usually DEEP_DIVE or TRADEOFFS)
+- Use AT LEAST 2 Tier 2+ questions per interview
+- If candidate is strong, aim for 2-3 Tier 3 questions
+
+DON'T:
+- Jump straight to Tier 3 without testing Tier 2 first
+- Ask Tier 3 questions to a struggling candidate (demoralizing, not useful)
+- Treat tiers as phases — mix Tier 1 and Tier 2 in the same phase
+- Ask more than one Tier 3 question in a row (space them out)
+
+WHEN TO START: Tier 1 questions begin in ARCHITECTURE phase. Never probe operational
+maturity or Staff-level thinking during INTRO or SCOPE — there's nothing to probe yet.
+
+SCORING SIGNAL:
+- Handles Tier 1 only → Score 2-3 (Scalability & Reliability)
+- Handles Tier 2 confidently → Score 3-4 (Scalability & Reliability, Technical Depth)
+- Handles Tier 3 with specifics → Score 4-5 (Technical Depth, Communication)
+
 ---
 
 ### HANDLING CANDIDATE QUESTIONS (CRITICAL)
