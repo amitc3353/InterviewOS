@@ -1,6 +1,7 @@
 """Load and manage interview scenarios from YAML files."""
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
@@ -79,12 +80,19 @@ class ScenarioLoader:
         Initialize loader and load all scenarios.
 
         Args:
-            scenarios_dir: Directory containing YAML files. Defaults to backend/scenarios/
+            scenarios_dir: Directory containing YAML files.
+                           Defaults to INTERVIEW_SCENARIOS_DIR env var,
+                           or backend/scenarios/ if not set.
         """
         if scenarios_dir is None:
-            # Default: backend/scenarios/
-            base = Path(__file__).parent.parent
-            scenarios_dir = base / "scenarios"
+            # Support env var for production deployments
+            env_dir = os.getenv("INTERVIEW_SCENARIOS_DIR")
+            if env_dir:
+                scenarios_dir = Path(env_dir)
+            else:
+                # Default: backend/scenarios/ (relative to this file)
+                base = Path(__file__).parent.parent
+                scenarios_dir = base / "scenarios"
 
         self.scenarios_dir = Path(scenarios_dir)
         self._scenarios: Dict[str, ScenarioMetadata] = {}
