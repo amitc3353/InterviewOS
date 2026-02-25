@@ -31,6 +31,10 @@ dist/
 build/
 *.egg-info/
 
+# Claude Code (local only)
+.claude/
+CLAUDE.md
+
 # InterviewOS artifacts
 transcripts/
 audio/
