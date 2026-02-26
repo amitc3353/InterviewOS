@@ -8,7 +8,7 @@ from typing import AsyncIterable, Optional
 
 from livekit import agents, rtc
 from livekit.agents import Agent, AgentSession, AgentServer, JobContext, WorkerOptions, llm, cli
-from livekit.plugins import deepgram, openai, silero, anthropic
+from livekit.plugins import deepgram, openai, silero, anthropic, cartesia
 
 from ..config import AgentConfig
 from ..models.session import InterviewSession, SessionState, InterviewPhase
@@ -107,12 +107,20 @@ class InterviewAgent(Agent):
                     self.interview_session.state.add_message("user", user_text)
                     logger.debug(f"Recorded user message: {user_text[:100]}...")
 
-        # --- Inject phase-aware system prompt (unchanged logic) ---
-        system_prompt = self.phase_manager.get_system_prompt(self.interview_session.state)
+        # --- KV-cache split prompts: static (cached) + dynamic (per-turn) ---
+        # First turn: Set static system prompt (gets KV-cached by LLM)
+        if not chat_ctx.items or len(chat_ctx.items) == 0:
+            static_prompt = self.phase_manager.get_static_system_prompt()
+            chat_ctx.add_message(role="system", content=static_prompt)
+
+        # Every turn: Build dynamic context
+        dynamic_context = self.phase_manager.get_dynamic_context(self.interview_session.state)
+
+        # Add interruption recovery context if needed
         current_phase = self.interview_session.state.phase
         if self._intro_interrupted:
             if current_phase == InterviewPhase.INTRO:
-                system_prompt += (
+                dynamic_context += (
                     "\n\n**RECOVERY CONTEXT**: Your previous turn was interrupted — "
                     "the candidate has NOT heard the full scenario. "
                     f'The scenario is: "{self.scenario}". '
@@ -122,16 +130,22 @@ class InterviewAgent(Agent):
             self._intro_interrupted = False
         if self._failure_setup_interrupted:
             if current_phase == InterviewPhase.FAILURE:
-                system_prompt += (
+                dynamic_context += (
                     "\n\n**RECOVERY CONTEXT**: Your previous failure scenario setup was "
                     "interrupted — the candidate may not have heard the full premise. "
                     "Re-state the failure scenario before asking about its impact."
                 )
             self._failure_setup_interrupted = False
-        if chat_ctx.items and len(chat_ctx.items) > 0:
-            chat_ctx.items[0] = llm.ChatMessage(role="system", content=[system_prompt])
-        else:
-            chat_ctx.add_message(role="system", content=system_prompt)
+
+        # CRITICAL: Remove previous dynamic context to prevent accumulation
+        # chat_ctx.items[0] = static system (never changes, KV-cached)
+        # chat_ctx.items[1] = previous dynamic context (remove before adding new one)
+        # LiveKit 1.4.3: items can include non-message objects, check if it's a message first
+        if len(chat_ctx.items) > 1 and hasattr(chat_ctx.items[1], 'role') and chat_ctx.items[1].role == "system":
+            chat_ctx.items.pop(1)
+
+        # Add fresh dynamic context as separate system message
+        chat_ctx.add_message(role="system", content=dynamic_context)
 
         logger.debug(
             f"LLM node — Phase: {self.interview_session.state.phase.value}, "
@@ -307,11 +321,12 @@ async def entrypoint(ctx: JobContext):
             model=config.llm_model,
             api_key=config.anthropic_api_key,
         ),
-        tts=openai.TTS(
-            voice=config.tts_voice,
-            api_key=config.openai_api_key,
-            model=config.tts_model,
-            speed=config.tts_speed,
+        tts=cartesia.TTS(
+            model="sonic-3",  # Latest Cartesia model
+            voice="95856005-0332-41b0-935f-352e296aa0df",  # Professional male voice
+            api_key=config.cartesia_api_key,
+            speed=1.0,  # Normal speed (sonic-3 requires float)
+            emotion=["positivity:low", "curiosity"],  # Moderate curiosity, low positivity for professional tone
         ),
         vad=silero.VAD.load(
             min_silence_duration=config.silence_threshold_ms / 1000.0,
@@ -343,12 +358,40 @@ async def entrypoint(ctx: JobContext):
         if not interview_agent._scoring_triggered:
             interview_agent._scoring_triggered = True
             asyncio.create_task(interview_agent._generate_scorecard())
-    
-    # Send initial greeting using session.generate_reply
-    await session.generate_reply(
-        instructions=f"Greet the candidate warmly. You are conducting a system design interview for: {scenario}. "
-        "Introduce yourself briefly and ask if they're ready to begin."
-    )
+
+    @session.on("metrics_collected")
+    def on_metrics(event):
+        """Log actual per-component latencies from LiveKit metrics."""
+        metrics_data = []
+
+        # STT duration
+        if hasattr(event, "stt_duration") and event.stt_duration:
+            stt_ms = event.stt_duration * 1000
+            metrics_data.append(f"STT={stt_ms:.0f}ms")
+
+        # LLM time to first token (TTFT)
+        if hasattr(event, "llm_ttft") and event.llm_ttft:
+            ttft_ms = event.llm_ttft * 1000
+            metrics_data.append(f"LLM-TTFT={ttft_ms:.0f}ms")
+
+        # LLM total duration
+        if hasattr(event, "llm_total_duration") and event.llm_total_duration:
+            llm_total_ms = event.llm_total_duration * 1000
+            metrics_data.append(f"LLM-Total={llm_total_ms:.0f}ms")
+
+        # TTS time to first byte (TTFB)
+        if hasattr(event, "tts_ttfb") and event.tts_ttfb:
+            tts_ttfb_ms = event.tts_ttfb * 1000
+            metrics_data.append(f"TTS-TTFB={tts_ttfb_ms:.0f}ms")
+
+        # Log combined metrics
+        if metrics_data:
+            logger.info(f"⚡ Component metrics: {', '.join(metrics_data)}")
+
+    # Send initial greeting using session.say() - skips LLM entirely for faster start
+    # Keep it simple and short for Cartesia TTS reliability
+    intro_text = f"Hey there. We're designing {scenario_text}. What questions do you have about the problem?"
+    await session.say(intro_text, allow_interruptions=True)
     
     logger.info("Interview session started")
 
