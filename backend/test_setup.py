@@ -26,7 +26,7 @@ def test_env_setup():
         "LiveKit API Secret": config.livekit_api_secret,
         "Deepgram API Key": config.deepgram_api_key,
         "Anthropic API Key": config.anthropic_api_key,
-        "OpenAI API Key": config.openai_api_key,
+        "Cartesia API Key": config.cartesia_api_key,
     }
     
     all_good = True
@@ -42,7 +42,8 @@ def test_env_setup():
     print(f"  LLM Provider: {config.llm_provider}")
     print(f"  LLM Model: {config.llm_model}")
     print(f"  TTS Provider: {config.tts_provider}")
-    print(f"  TTS Voice: {config.tts_voice}")
+    print(f"  Cartesia Voice ID: {config.cartesia_voice_id}")
+    print(f"  Cartesia Speed: {config.cartesia_speed}")
     print(f"  VAD Sensitivity: {config.vad_sensitivity}")
     print(f"  Silence Threshold: {config.silence_threshold_ms}ms")
     print(f"  Semantic Turn Detection: {config.use_semantic_turn_detection}")
