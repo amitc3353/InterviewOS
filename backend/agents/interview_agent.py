@@ -8,7 +8,7 @@ from typing import AsyncIterable, Optional
 
 from livekit import agents, rtc
 from livekit.agents import Agent, AgentSession, AgentServer, JobContext, WorkerOptions, llm, cli
-from livekit.plugins import deepgram, openai, silero, anthropic, cartesia
+from livekit.plugins import deepgram, openai, silero, anthropic, cartesia, turn_detector
 
 from ..config import AgentConfig
 from ..models.session import InterviewSession, SessionState, InterviewPhase
@@ -16,6 +16,7 @@ from ..models.scorecard import InterviewScorecard
 from ..interview.phase_manager import PhaseManager
 from ..interview.response_parser import StreamingResponseParser
 from ..interview.scoring_engine import ScoringEngine
+from ..interview.tts_pronunciations import normalize_for_tts as _normalize_for_tts
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,9 @@ class InterviewAgent(Agent):
         self._intro_interrupted: bool = False
         self._failure_setup_interrupted: bool = False
 
+        # Set after 2 WRAP turns — no further LLM responses after this point
+        self._session_completed: bool = False
+
         # Track user input for history
         self.pending_user_input = None
         
@@ -91,6 +95,11 @@ class InterviewAgent(Agent):
         """
         turn_start = time.monotonic()
         first_spoken_time: Optional[float] = None
+
+        # Session has terminated after WRAP — no further LLM responses
+        if self._session_completed:
+            logger.info("Session completed — not generating further LLM responses")
+            return  # yields nothing; LiveKit session continues silently until participant leaves
 
         # --- Record user message (unchanged logic) ---
         messages_list = chat_ctx.messages()
@@ -147,45 +156,120 @@ class InterviewAgent(Agent):
         # Add fresh dynamic context as separate system message
         chat_ctx.add_message(role="system", content=dynamic_context)
 
+        # --- Fix 3: Cap chat_ctx at 14 non-system messages (~7 turns) ---
+        # Prevents unbounded growth past the 30K input-token/min rate limit.
+        # System messages (static prompt + dynamic context) are always kept.
+        MAX_HISTORY_MESSAGES = 14
+        system_items = [
+            item for item in chat_ctx.items
+            if hasattr(item, 'role') and item.role == "system"
+        ]
+        non_system_items = [
+            item for item in chat_ctx.items
+            if not (hasattr(item, 'role') and item.role == "system")
+        ]
+        if len(non_system_items) > MAX_HISTORY_MESSAGES:
+            non_system_items = non_system_items[-MAX_HISTORY_MESSAGES:]
+            chat_ctx.items = system_items + non_system_items
+
         logger.debug(
             f"LLM node — Phase: {self.interview_session.state.phase.value}, "
             f"Turn: {self.interview_session.state.phase_turn_count}"
         )
 
-        # --- Streaming parse ---
+        # --- Fix 5: Streaming-safe retry with graceful degradation ---
+        # Python 3.11+: yield inside try/except is legal.
+        # On attempt 0 we stream chunks directly (no buffering, no latency penalty).
+        # On retry we buffer the new response and replay it after success.
+        # TODO: If a 429 interrupts mid-stream on attempt 0, chunks already yielded to TTS
+        # are not replayable — the retry will produce a fresh complete sentence from the new
+        # response rather than continuing the partial one. This is acceptable given mid-stream
+        # 429s are rare (rate limits apply at request start, not during streaming).
+
         parser = StreamingResponseParser()
         last_chunk_id = "parsed_response"
+        filler_chunk: Optional[llm.ChatChunk] = None
 
-        async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
-            if chunk.id:
-                last_chunk_id = chunk.id
+        for attempt in range(3):
+            try:
+                buffered_chunks: list[llm.ChatChunk] = []
 
-            if chunk.delta and chunk.delta.content:
-                spoken_fragment = parser.feed(chunk.delta.content)
+                async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
+                    if chunk.id:
+                        last_chunk_id = chunk.id
 
-                if spoken_fragment:
+                    if chunk.delta and chunk.delta.content:
+                        spoken_fragment = parser.feed(chunk.delta.content)
+                        if spoken_fragment:
+                            spoken_fragment = _normalize_for_tts(spoken_fragment)
+
+                        if spoken_fragment:
+                            if first_spoken_time is None:
+                                first_spoken_time = time.monotonic()
+                                elapsed_ms = (first_spoken_time - turn_start) * 1000
+                                logger.info(f"⚡ First spoken text in {elapsed_ms:.0f}ms: {spoken_fragment!r}")
+
+                            spoken_chunk = llm.ChatChunk(
+                                id=last_chunk_id,
+                                delta=llm.ChoiceDelta(role="assistant", content=spoken_fragment),
+                            )
+                            if attempt == 0:
+                                yield spoken_chunk   # stream immediately on first attempt
+                            else:
+                                buffered_chunks.append(spoken_chunk)  # collect for replay on retry
+                        continue  # don't yield the raw chunk
+
+                    if attempt == 0:
+                        yield chunk   # pass through non-text chunks on first attempt
+                    else:
+                        buffered_chunks.append(chunk)
+
+                # Flush parser buffer after stream ends
+                final_fragment = parser.flush()
+                if final_fragment:
                     if first_spoken_time is None:
                         first_spoken_time = time.monotonic()
-                        elapsed_ms = (first_spoken_time - turn_start) * 1000
-                        logger.info(f"⚡ First spoken text in {elapsed_ms:.0f}ms: {spoken_fragment!r}")
-
-                    yield llm.ChatChunk(
+                    flushed = llm.ChatChunk(
                         id=last_chunk_id,
-                        delta=llm.ChoiceDelta(role="assistant", content=spoken_fragment),
+                        delta=llm.ChoiceDelta(role="assistant", content=final_fragment),
                     )
-                continue  # don't yield the raw chunk
+                    if attempt == 0:
+                        yield flushed
+                    else:
+                        buffered_chunks.append(flushed)
 
-            yield chunk  # pass through non-text chunks (tool calls, control frames)
+                # Replay buffered chunks for retry attempts
+                if attempt > 0:
+                    for buffered in buffered_chunks:
+                        yield buffered
 
-        # --- Flush buffer after stream ends ---
-        final_fragment = parser.flush()
-        if final_fragment:
-            if first_spoken_time is None:
-                first_spoken_time = time.monotonic()
-            yield llm.ChatChunk(
-                id=last_chunk_id,
-                delta=llm.ChoiceDelta(role="assistant", content=final_fragment),
-            )
+                break  # success — exit retry loop
+
+            except Exception as e:
+                status = getattr(e, 'status_code', None)
+                if status == 429 and attempt < 2:
+                    wait = 2 ** attempt  # 1s, then 2s
+                    logger.warning(
+                        "Rate limit hit (attempt %d/3), retrying in %ds", attempt + 1, wait
+                    )
+                    await asyncio.sleep(wait)
+                    # Reset parser for the fresh retry response
+                    parser = StreamingResponseParser()
+                    first_spoken_time = None
+                else:
+                    logger.error("LLM request failed after %d attempt(s): %s", attempt + 1, e)
+                    # Graceful degradation: emit a filler phrase so TTS says something
+                    # natural instead of the session dying silently.
+                    filler_text = "Give me just a moment."
+                    filler_chunk = llm.ChatChunk(
+                        id=last_chunk_id,
+                        delta=llm.ChoiceDelta(role="assistant", content=filler_text),
+                    )
+                    break
+
+        if filler_chunk is not None:
+            yield filler_chunk
+            return  # skip state update — no real LLM response to parse
 
         total_ms = (time.monotonic() - turn_start) * 1000
         first_ms = ((first_spoken_time or turn_start) - turn_start) * 1000
@@ -225,6 +309,14 @@ class InterviewAgent(Agent):
             logger.debug(f"Recorded assistant turn: {full_spoken[:100]}...")
         else:
             logger.warning("Parser returned empty spoken text — skipping history record")
+
+        # --- Terminate session after 2 WRAP turns (closing question + closing ACK) ---
+        if (self.interview_session.state.phase == InterviewPhase.WRAP
+                and self.interview_session.state.phase_turn_count >= 2
+                and not self._session_completed):
+            self._session_completed = True
+            logger.info("WRAP phase complete (%d turns) — session terminated",
+                        self.interview_session.state.phase_turn_count)
     
     async def tts_node(
         self,
@@ -270,6 +362,25 @@ class InterviewAgent(Agent):
             logger.info(f"    {dim.rationale}")
         logger.info(f"Narrative: {scorecard.narrative}")
         logger.info("=" * 60)
+
+
+def prewarm(proc: agents.JobProcess) -> None:
+    """Pre-load heavy models once per worker process before any job arrives."""
+    from ..config import AgentConfig
+    config = AgentConfig.from_env()
+
+    proc.userdata["turn_detector"] = None  # default: Silero VAD fallback
+
+    if config.use_semantic_turn_detection:
+        try:
+            logger.info("Loading semantic turn detector model...")
+            eou = turn_detector.english.EnglishModel()
+            proc.userdata["turn_detector"] = eou
+            logger.info("Semantic turn detector loaded")
+        except Exception as e:
+            logger.warning(
+                "Turn detector failed to load (%s); sessions will use Silero VAD only", e
+            )
 
 
 async def entrypoint(ctx: JobContext):
@@ -324,20 +435,23 @@ async def entrypoint(ctx: JobContext):
     interview_agent = InterviewAgent(config, scenario_text, scenario_metadata)
     
     # Create agent session
-    session = AgentSession(
+    session_kwargs = dict(
         stt=deepgram.STT(
             api_key=config.deepgram_api_key,
-            model="nova-2"
+            model="nova-2",
         ),
         llm=anthropic.LLM(
             model=config.llm_model,
             api_key=config.anthropic_api_key,
+            caching="ephemeral",
         ),
         tts=cartesia.TTS(
             model="sonic-3",  # Latest Cartesia model
             voice=config.cartesia_voice_id,
             api_key=config.cartesia_api_key,
-            speed=1.0,  # Normal speed (sonic-3 requires float)
+            speed=config.cartesia_speed,
+            **({"pronunciation_dict_id": config.cartesia_pronunciation_dict_id}
+               if config.cartesia_pronunciation_dict_id else {}),
         ),
         vad=silero.VAD.load(
             min_silence_duration=config.silence_threshold_ms / 1000.0,
@@ -345,6 +459,13 @@ async def entrypoint(ctx: JobContext):
         min_endpointing_delay=config.min_endpointing_delay,
         max_endpointing_delay=config.max_endpointing_delay,
     )
+    eou = ctx.proc.userdata.get("turn_detector")
+    if eou is not None:
+        session_kwargs["turn_detection"] = eou
+        logger.info("Semantic turn detection active for this session")
+    else:
+        logger.info("Silero VAD turn detection active for this session")
+    session = AgentSession(**session_kwargs)
 
     # Start session with our custom agent
     await session.start(
@@ -399,9 +520,22 @@ async def entrypoint(ctx: JobContext):
         if metrics_data:
             logger.info(f"⚡ Component metrics: {', '.join(metrics_data)}")
 
+        # Log LLM token usage to validate theoretical token budget
+        input_tokens = getattr(event, 'input_tokens', None) or getattr(event, 'llm_input_tokens', None)
+        output_tokens = getattr(event, 'output_tokens', None) or getattr(event, 'llm_output_tokens', None)
+        cache_read = getattr(event, 'cache_read_input_tokens', None) or getattr(event, 'llm_cache_read_input_tokens', None)
+        if input_tokens is not None:
+            logger.info(
+                "📊 LLM tokens — input: %d, output: %d, cache_read: %d",
+                input_tokens,
+                output_tokens or 0,
+                cache_read or 0,
+            )
+
     # Send initial greeting using session.say() - skips LLM entirely for faster start
-    # Keep it simple and short for Cartesia TTS reliability
-    intro_text = f"Hey there. We're designing {scenario_text}. What questions do you have about the problem?"
+    # Strip leading "Design " from scenario name to avoid "We're designing Design a URL Shortener"
+    display_name = scenario_text.removeprefix("Design ").removeprefix("design ")
+    intro_text = f"Hey there. We're designing {display_name}. What questions do you have?"
     await session.say(intro_text, allow_interruptions=True)
     
     logger.info("Interview session started")

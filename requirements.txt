@@ -8,7 +8,7 @@ livekit-plugins-openai>=0.7.0
 livekit-plugins-silero>=0.6.0
 livekit-plugins-anthropic>=0.1.0
 livekit-plugins-cartesia>=0.5.0
-# livekit-plugins-turn-detector>=0.1.0  # Disabled - model download issues
+livekit-plugins-turn-detector>=0.1.0
 
 # Environment and utilities
 python-dotenv>=1.0.0

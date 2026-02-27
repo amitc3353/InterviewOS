@@ -2,6 +2,7 @@
 
 import os
 from dataclasses import dataclass, field
+from typing import Optional
 
 @dataclass
 class AgentConfig:
@@ -27,7 +28,8 @@ class AgentConfig:
     llm_model: str = "claude-sonnet-4-20250514"
     tts_provider: str = "cartesia"
     cartesia_voice_id: str = "f786b574-daa5-4673-aa0c-cbe3e8534c02"  # Cartesia plugin default (Katie)
-    cartesia_speed: float = 1.0  # Normal speed (sonic-3 requires float)
+    cartesia_speed: float = 0.85  # Slightly slower for deliberate interview pace (sonic-3 requires float)
+    cartesia_pronunciation_dict_id: Optional[str] = None
 
     # VAD configuration
     vad_sensitivity: float = 0.5  # 0.0-1.0
@@ -38,7 +40,7 @@ class AgentConfig:
     max_endpointing_delay: float = 5.0   # seconds; covers long thinking pauses
 
     # Turn detection
-    use_semantic_turn_detection: bool = False  # Disabled for now - using VAD only
+    use_semantic_turn_detection: bool = True
     
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -55,6 +57,8 @@ class AgentConfig:
             min_endpointing_delay=float(os.getenv("MIN_ENDPOINTING_DELAY", "0.6")),
             max_endpointing_delay=float(os.getenv("MAX_ENDPOINTING_DELAY", "5.0")),
             silence_threshold_ms=int(os.getenv("SILENCE_THRESHOLD_MS", "600")),
+            use_semantic_turn_detection=os.getenv("SEMANTIC_TURN_DETECTION", "true").lower() != "false",
+            cartesia_pronunciation_dict_id=os.getenv("CARTESIA_PRONUNCIATION_DICT_ID") or None,
         )
     
     def validate(self) -> bool:

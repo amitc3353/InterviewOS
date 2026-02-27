@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from dotenv import load_dotenv
 
 from backend.config import AgentConfig
-from backend.agents.interview_agent import entrypoint  # Phased interview agent
+from backend.agents.interview_agent import entrypoint, prewarm  # Phased interview agent
 from livekit.agents import WorkerOptions, cli
 
 # Load environment variables
@@ -52,6 +52,7 @@ def main():
     # Create worker options with entrypoint
     worker_opts = WorkerOptions(
         entrypoint_fnc=entrypoint,
+        prewarm_fnc=prewarm,
         ws_url=config.livekit_url,
         api_key=config.livekit_api_key,
         api_secret=config.livekit_api_secret,
