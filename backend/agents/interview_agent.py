@@ -238,8 +238,13 @@ class InterviewAgent(Agent):
         """
         # The text coming in has already been parsed and cleaned in llm_node
         # Just pass it through to default TTS
-        async for audio_frame in Agent.default.tts_node(self, text, model_settings):
-            yield audio_frame
+        try:
+            async for audio_frame in Agent.default.tts_node(self, text, model_settings):
+                yield audio_frame
+        except Exception as e:
+            status = getattr(e, "status_code", "N/A")
+            logger.error("TTS failed — status_code=%s  type=%s  msg=%s", status, type(e).__name__, e)
+            raise
 
     async def _generate_scorecard(self):
         """Generate post-interview scorecard. Runs as background task or on session_end."""
@@ -278,7 +283,14 @@ async def entrypoint(ctx: JobContext):
     # Load config
     from ..config import AgentConfig
     config = AgentConfig.from_env()
-    
+
+    # Validate Cartesia key loaded
+    _key = config.cartesia_api_key
+    if _key:
+        logger.info("Cartesia API key loaded: %s...%s", _key[:4], _key[-4:])
+    else:
+        logger.error("Cartesia API key is EMPTY — check CARTESIA_API_KEY in .env")
+
     # Get scenario from job metadata or use default
     from ..interview.scenario_loader import ScenarioLoader
     import json
@@ -323,10 +335,9 @@ async def entrypoint(ctx: JobContext):
         ),
         tts=cartesia.TTS(
             model="sonic-3",  # Latest Cartesia model
-            voice="95856005-0332-41b0-935f-352e296aa0df",  # Professional male voice
+            voice=config.cartesia_voice_id,
             api_key=config.cartesia_api_key,
             speed=1.0,  # Normal speed (sonic-3 requires float)
-            emotion=["positivity:low", "curiosity"],  # Moderate curiosity, low positivity for professional tone
         ),
         vad=silero.VAD.load(
             min_silence_duration=config.silence_threshold_ms / 1000.0,

@@ -2,8 +2,6 @@
 
 import os
 from dataclasses import dataclass, field
-from typing import Optional
-
 
 @dataclass
 class AgentConfig:
@@ -28,9 +26,8 @@ class AgentConfig:
     llm_provider: str = "anthropic"
     llm_model: str = "claude-sonnet-4-20250514"
     tts_provider: str = "cartesia"
-    cartesia_voice_id: str = "95856005-0332-41b0-935f-352e296aa0df"  # Professional male voice
+    cartesia_voice_id: str = "f786b574-daa5-4673-aa0c-cbe3e8534c02"  # Cartesia plugin default (Katie)
     cartesia_speed: float = 1.0  # Normal speed (sonic-3 requires float)
-    cartesia_emotion: Optional[list] = field(default_factory=lambda: ["positivity:low", "curiosity:high"])
 
     # VAD configuration
     vad_sensitivity: float = 0.5  # 0.0-1.0
@@ -54,6 +51,7 @@ class AgentConfig:
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             cartesia_api_key=os.getenv("CARTESIA_API_KEY", ""),
+            cartesia_voice_id=os.getenv("CARTESIA_VOICE_ID", "f786b574-daa5-4673-aa0c-cbe3e8534c02"),
             min_endpointing_delay=float(os.getenv("MIN_ENDPOINTING_DELAY", "0.6")),
             max_endpointing_delay=float(os.getenv("MAX_ENDPOINTING_DELAY", "5.0")),
             silence_threshold_ms=int(os.getenv("SILENCE_THRESHOLD_MS", "600")),
