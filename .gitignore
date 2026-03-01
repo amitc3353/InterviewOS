@@ -33,7 +33,6 @@ build/
 
 # Claude Code (local only)
 .claude/
-CLAUDE.md
 
 # InterviewOS artifacts
 transcripts/
