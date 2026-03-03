@@ -21,6 +21,36 @@ from ..interview.tts_pronunciations import normalize_for_tts as _normalize_for_t
 
 logger = logging.getLogger(__name__)
 
+# LLM resilience configuration
+LLM_TIMEOUT_SECONDS = 12.0  # Timeout for Claude API first-token response
+MAX_LLM_RETRIES = 3  # Total attempts including initial try
+
+
+async def _stream_with_first_chunk_timeout(async_gen, timeout: float):
+    """
+    Wrap async generator with timeout only on first item (TTFT).
+
+    Once first chunk arrives, continue streaming without timeout.
+    This prevents stalled LLM requests while allowing normal streaming.
+
+    Args:
+        async_gen: Async generator to wrap
+        timeout: Timeout in seconds for first chunk
+
+    Raises:
+        asyncio.TimeoutError: If first chunk doesn't arrive within timeout
+    """
+    try:
+        # First chunk with timeout
+        first_item = await asyncio.wait_for(async_gen.__anext__(), timeout=timeout)
+        yield first_item
+
+        # Rest without timeout (normal streaming can be slow)
+        async for item in async_gen:
+            yield item
+    except StopAsyncIteration:
+        pass
+
 
 class InterviewAgent(Agent):
     """
@@ -176,10 +206,11 @@ class InterviewAgent(Agent):
         # Add fresh dynamic context as separate system message
         chat_ctx.add_message(role="system", content=dynamic_context)
 
-        # --- Fix 3: Cap chat_ctx at 14 non-system messages (~7 turns) ---
-        # Prevents unbounded growth past the 30K input-token/min rate limit.
-        # System messages (static prompt + dynamic context) are always kept.
-        MAX_HISTORY_MESSAGES = 14
+        # --- Context overflow prevention: Cap chat_ctx at 16-20 non-system messages (8-10 turns) ---
+        # Proactively trims conversation history BEFORE each Claude call to prevent token overflow.
+        # System messages (static prompt + dynamic context + locked_constraints) are always kept.
+        # This prevents hitting the token limit mid-session.
+        MAX_HISTORY_MESSAGES = 18  # 9 turns (user + assistant pairs)
         system_items = [
             item for item in chat_ctx.items
             if hasattr(item, 'role') and item.role == "system"
@@ -189,32 +220,42 @@ class InterviewAgent(Agent):
             if not (hasattr(item, 'role') and item.role == "system")
         ]
         if len(non_system_items) > MAX_HISTORY_MESSAGES:
+            trimmed_count = len(non_system_items) - MAX_HISTORY_MESSAGES
             non_system_items = non_system_items[-MAX_HISTORY_MESSAGES:]
             chat_ctx.items = system_items + non_system_items
+            logger.info(
+                "Context trimmed: removed %d oldest messages, kept last %d — turn=%d",
+                trimmed_count,
+                MAX_HISTORY_MESSAGES,
+                self.interview_session.state.total_turn_count,
+            )
 
         logger.debug(
             f"LLM node — Phase: {self.interview_session.state.phase.value}, "
             f"Turn: {self.interview_session.state.phase_turn_count}"
         )
 
-        # --- Fix 5: Streaming-safe retry with graceful degradation ---
-        # Python 3.11+: yield inside try/except is legal.
+        # --- Streaming-safe retry with timeout, rate limit, and graceful degradation ---
         # On attempt 0 we stream chunks directly (no buffering, no latency penalty).
         # On retry we buffer the new response and replay it after success.
-        # TODO: If a 429 interrupts mid-stream on attempt 0, chunks already yielded to TTS
-        # are not replayable — the retry will produce a fresh complete sentence from the new
-        # response rather than continuing the partial one. This is acceptable given mid-stream
-        # 429s are rare (rate limits apply at request start, not during streaming).
+        # Timeout applies only to first chunk (TTFT), not entire stream.
+        # Rate limits (429) are retried with exponential backoff or retry-after header.
 
         parser = StreamingResponseParser()
         last_chunk_id = "parsed_response"
         filler_chunk: Optional[llm.ChatChunk] = None
 
-        for attempt in range(3):
+        for attempt in range(MAX_LLM_RETRIES):
             try:
                 buffered_chunks: list[llm.ChatChunk] = []
 
-                async for chunk in Agent.default.llm_node(self, chat_ctx, tools, model_settings):
+                # Wrap LLM stream with timeout on first chunk
+                llm_stream = Agent.default.llm_node(self, chat_ctx, tools, model_settings)
+                llm_stream_with_timeout = _stream_with_first_chunk_timeout(
+                    llm_stream, LLM_TIMEOUT_SECONDS
+                )
+
+                async for chunk in llm_stream_with_timeout:
                     if chunk.id:
                         last_chunk_id = chunk.id
 
@@ -265,19 +306,80 @@ class InterviewAgent(Agent):
 
                 break  # success — exit retry loop
 
-            except Exception as e:
-                status = getattr(e, 'status_code', None)
-                if status == 429 and attempt < 2:
-                    wait = 2 ** attempt  # 1s, then 2s
+            except asyncio.TimeoutError:
+                # LLM timeout - retry with exponential backoff
+                if attempt < MAX_LLM_RETRIES - 1:
+                    wait = 2 ** attempt  # 1s, 2s, 4s...
                     logger.warning(
-                        "Rate limit hit (attempt %d/3), retrying in %ds", attempt + 1, wait
+                        "LLM timeout (%ds) on attempt %d/%d, retrying in %ds — turn=%d phase=%s",
+                        LLM_TIMEOUT_SECONDS,
+                        attempt + 1,
+                        MAX_LLM_RETRIES,
+                        wait,
+                        self.interview_session.state.total_turn_count,
+                        self.interview_session.state.phase.value,
+                    )
+                    await asyncio.sleep(wait)
+                    # Reset parser for fresh retry
+                    parser = StreamingResponseParser()
+                    first_spoken_time = None
+                else:
+                    # Final timeout - deliver filler per task requirements
+                    logger.error(
+                        "LLM timeout after %d attempts, delivering filler — turn=%d phase=%s",
+                        MAX_LLM_RETRIES,
+                        self.interview_session.state.total_turn_count,
+                        self.interview_session.state.phase.value,
+                    )
+                    filler_text = "Hmm."
+                    filler_chunk = llm.ChatChunk(
+                        id=last_chunk_id,
+                        delta=llm.ChoiceDelta(role="assistant", content=filler_text),
+                    )
+                    break
+
+            except Exception as e:
+                # Rate limit (429) or other API errors
+                status = getattr(e, 'status_code', None)
+
+                if status == 429 and attempt < MAX_LLM_RETRIES - 1:
+                    # Extract retry-after header if present
+                    retry_after = None
+                    if hasattr(e, 'response') and hasattr(e.response, 'headers'):
+                        retry_after = e.response.headers.get('retry-after') or e.response.headers.get('Retry-After')
+
+                    # Use retry-after if present, otherwise exponential backoff
+                    if retry_after:
+                        try:
+                            wait = float(retry_after)
+                        except (ValueError, TypeError):
+                            wait = 2 ** attempt
+                    else:
+                        wait = 2 ** attempt  # 1s, 2s, 4s...
+
+                    logger.warning(
+                        "Rate limit (429) on attempt %d/%d, retrying in %ds — turn=%d phase=%s%s",
+                        attempt + 1,
+                        MAX_LLM_RETRIES,
+                        wait,
+                        self.interview_session.state.total_turn_count,
+                        self.interview_session.state.phase.value,
+                        f" (retry-after: {retry_after}s)" if retry_after else "",
                     )
                     await asyncio.sleep(wait)
                     # Reset parser for the fresh retry response
                     parser = StreamingResponseParser()
                     first_spoken_time = None
                 else:
-                    logger.error("LLM request failed after %d attempt(s): %s", attempt + 1, e)
+                    # Non-retryable error or final attempt failed
+                    logger.error(
+                        "LLM request failed after %d attempt(s): %s (status: %s) — turn=%d phase=%s",
+                        attempt + 1,
+                        e,
+                        status or "N/A",
+                        self.interview_session.state.total_turn_count,
+                        self.interview_session.state.phase.value,
+                    )
                     # Graceful degradation: emit a filler phrase so TTS says something
                     # natural instead of the session dying silently.
                     filler_text = "Give me just a moment."
