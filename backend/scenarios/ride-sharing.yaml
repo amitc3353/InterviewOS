@@ -1,0 +1,67 @@
+id: ride-sharing
+name: "Design a Ride-Sharing Platform"
+archetype: "platform-infra"
+description: |
+  Design a ride-sharing platform like Uber or Lyft. The system should
+  match riders with nearby drivers in real-time, track live locations,
+  calculate ETAs and dynamic pricing, handle surge pricing during peak
+  demand, and manage driver dispatch and trip lifecycle.
+
+complexity_notes: |
+  At Staff level, this is about real-time geo-spatial optimization at scale.
+  Push toward: geo-spatial indexing strategies (S2/H3 cells, geohashing),
+  matching algorithm optimization and fairness, dynamic pricing mechanics,
+  real-time location tracking with WebSockets, handling GPS staleness,
+  ETA calculation accuracy, and database hotspots from popular locations.
+
+scope_answers:
+  daily_rides: "10 million rides per day globally"
+  concurrent_drivers: "500,000 active drivers during peak hours"
+  concurrent_riders: "1 million concurrent ride requests at peak"
+  latency: "What would you target for matching SLA?"
+  consistency: "What consistency model for ride state?"
+  matching_radius: "Start with 5km radius, expand if no match"
+  surge_multiplier: "Up to 5x during extreme demand"
+  payment_processing: "Real-time authorization, post-trip capture"
+  regions: "100+ cities across 50 countries"
+  location_updates: "GPS updates every 3-5 seconds from drivers"
+
+critical_components:
+  - name: "Geo-spatial indexing and proximity search"
+    why: "S2/H3 cell hierarchies, quad-trees for point queries, handling millions of moving objects, indexing strategy for sub-second proximity search"
+  - name: "Real-time matching algorithm"
+    why: "Optimization for ETA, acceptance rate prediction, fairness (avoid starving drivers), re-matching on rejection, batch matching vs greedy"
+  - name: "Surge pricing engine"
+    why: "Demand prediction models, dynamic multiplier calculation, fairness constraints, anti-gaming mechanisms"
+  - name: "Real-time location tracking"
+    why: "WebSocket connection management, GPS update ingestion, handling stale locations, trip state synchronization"
+
+low_priority_components:
+  - "User authentication and profiles"
+  - "Payment gateway integration"
+  - "Push notification service"
+  - "Admin dashboard and analytics"
+  - "Driver background check integration"
+
+failure_scenarios:
+  - scenario: "10x surge in ride requests at stadium after concert ends"
+    focus: "Surge pricing activation, queue management, driver incentives, graceful degradation"
+  - scenario: "Driver GPS goes offline mid-trip — rider sees wrong location"
+    focus: "GPS staleness detection, fallback to last known location, trip state recovery"
+  - scenario: "Matching service crashes — thousands of riders waiting"
+    focus: "Service degradation, fallback matching strategies, queue prioritization"
+  - scenario: "Database hotspot at major airport — all queries slow down"
+    focus: "Geo-spatial sharding, read replicas, caching strategy, hotspot detection"
+  - scenario: "Driver accepts ride but cancels 3 times in a row"
+    focus: "Re-matching logic, acceptance rate tracking, driver penalties, rider experience"
+
+deep_dive_focus:
+  - component: "Geo-spatial indexing implementation"
+    why: "S2/H3 cell level selection, range query optimization, handling moving objects, sharding strategy"
+  - component: "Matching algorithm fairness and optimization"
+    why: "Multi-objective optimization (ETA, acceptance rate, fairness), online vs batch matching, Hungarian algorithm vs greedy"
+
+scoring_benchmarks:
+  exceptional: "Discusses S2/H3 cells with specific level selection math, implements multi-objective matching with acceptance rate prediction, addresses surge pricing with demand forecasting models, handles database hotspots with geo-sharding strategy"
+  solid: "Mentions geohashing or quad-trees for proximity search, basic matching by distance, surge pricing with supply/demand ratio, WebSocket location tracking, but lacks depth on optimization and edge cases"
+  weak: "Treats it like CRUD with lat/lon columns and SQL distance queries, no discussion of real-time indexing, matching optimization, or surge pricing mechanics"
