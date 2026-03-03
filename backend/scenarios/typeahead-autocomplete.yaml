@@ -1,0 +1,60 @@
+id: typeahead-autocomplete
+name: "Design a Typeahead Autocomplete System"
+archetype: "real-time-streaming"
+description: |
+  Design a typeahead autocomplete system like Google Search suggestions.
+  The system should provide real-time query suggestions as users type,
+  with sub-100ms latency. It should handle billions of queries per day
+  and provide personalized, relevant suggestions.
+
+complexity_notes: |
+  At Staff level, this goes beyond basic prefix matching.
+  Push toward: distributed trie/prefix indexing strategies, ranking
+  algorithm design, personalization vs. global popularity tradeoffs,
+  cache invalidation for trending queries, and low-latency serving
+  under high QPS.
+
+scope_answers:
+  users: "About 500 million DAU."
+  qps: "Peak of 50,000 queries per second."
+  latency: "What would you target for good user experience?"
+  personalization: "Should we personalize suggestions? What's the tradeoff?"
+  trending: "Should we show trending queries? How quickly?"
+  languages: "Start with English, but design for multi-language."
+  suggestion_count: "Top 10 suggestions per query."
+  update_frequency: "How often should the index be rebuilt?"
+  data_sources: "What data should inform the suggestions?"
+
+critical_components:
+  - name: "Prefix indexing structure"
+    why: "Trie vs inverted index vs n-gram approach, distributed partitioning, memory vs disk tradeoffs"
+  - name: "Ranking algorithm"
+    why: "Popularity vs recency vs personalization, context-aware ranking, A/B testing infrastructure"
+  - name: "Cache layer design"
+    why: "Multi-level caching, cache invalidation for trending queries, memory efficiency"
+
+low_priority_components:
+  - "Load balancer configuration"
+  - "Basic API endpoint design"
+  - "Logging infrastructure"
+
+failure_scenarios:
+  - scenario: "Query 'breaking news celebrity' spikes 100x during major event"
+    focus: "Cache warming, query coalescing, graceful degradation"
+  - scenario: "Index rebuild causes memory spike and OOM kills servers"
+    focus: "Incremental updates, rolling deployment, resource isolation"
+  - scenario: "Latency P99 jumps from 50ms to 500ms during peak traffic"
+    focus: "Hotspot detection, load shedding, timeout tuning"
+  - scenario: "New trending topic not showing up in suggestions for 30 minutes"
+    focus: "Real-time vs batch indexing, cache invalidation strategy"
+
+deep_dive_focus:
+  - component: "Prefix indexing structure"
+    why: "Trie partitioning, memory optimization, distributed coordination"
+  - component: "Ranking algorithm"
+    why: "Popularity signals, personalization, context-aware scoring"
+
+scoring_benchmarks:
+  exceptional: "Designs distributed trie with smart partitioning, implements multi-signal ranking (popularity + personalization + recency), handles cache invalidation for trending queries, addresses memory optimization with compression"
+  solid: "Mentions trie or prefix tree, basic popularity ranking, multi-level caching, but lacks depth on distributed challenges or real-time updates"
+  weak: "Treats it like a simple database lookup, no mention of indexing structure, ignores latency constraints"
