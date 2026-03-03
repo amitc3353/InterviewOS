@@ -1,0 +1,82 @@
+id: recommendation-engine
+name: "Design a Recommendation Engine"
+archetype: "ml-system"
+description: |
+  Design a large-scale recommendation system like Netflix, Spotify, or Amazon.
+  The system should provide personalized recommendations in real-time, handle
+  billions of user-item interactions, support multiple recommendation strategies
+  (collaborative filtering, content-based, hybrid), address cold start problems,
+  continuously learn from user feedback, and balance exploration vs exploitation.
+
+complexity_notes: |
+  At Staff level, this goes beyond basic collaborative filtering. Push toward:
+  two-tower neural architectures, candidate generation vs ranking stages, online
+  learning and model retraining pipelines, offline vs online metrics alignment,
+  handling extreme data sparsity, real-time feature computation, A/B testing
+  infrastructure, cold start mitigation, diversity and freshness tradeoffs,
+  serving latency under p99 < 100ms, and explaining recommendations.
+
+scope_answers:
+  total_users: "500 million registered users, 50 million DAU"
+  total_items: "10 million items (videos, products, songs, etc.)"
+  daily_interactions: "1 billion daily interactions (views, clicks, purchases)"
+  recommendation_latency: "What's acceptable? Target p99 < 100ms."
+  recommendation_count: "How many items to recommend? Top 20-100?"
+  cold_start: "How to handle new users and new items?"
+  diversity: "Should recommendations be diverse or purely accuracy-driven?"
+  freshness: "Balance fresh content vs proven popular content?"
+  model_update_frequency: "Hourly, daily, or real-time online learning?"
+  explainability: "Do recommendations need explanations?"
+  business_objectives: "Maximize engagement, revenue, or user satisfaction?"
+
+critical_components:
+  - name: "Candidate generation and retrieval"
+    why: "Two-tower embeddings, approximate nearest neighbor search (FAISS/ScaNN), multiple candidate sources (collaborative, content-based, trending), candidate diversity, retrieving 1000s from millions in <50ms"
+  - name: "Ranking and scoring model"
+    why: "Neural networks with user/item features, point-wise vs pair-wise vs list-wise ranking, calibration for click-through rate, multi-objective optimization (engagement + revenue), position bias correction"
+  - name: "Feature engineering pipeline"
+    why: "Real-time user context features, item metadata embeddings, interaction history aggregation, negative sampling strategy, feature freshness vs staleness, feature store architecture"
+  - name: "Cold start handling"
+    why: "New user: popularity-based + demographic features + explore-exploit. New item: content-based features, early adopter targeting, cold start window definition"
+  - name: "Model training and evaluation"
+    why: "Offline metrics (AUC, NDCG, recall@k) vs online metrics (CTR, watch time, conversion), implicit feedback bias, negative sampling, distributed training for billion-scale data"
+  - name: "Online learning and model updates"
+    why: "Batch retraining cadence, online gradient updates, concept drift detection, A/B test for model rollout, shadow mode validation, feature distribution shift monitoring"
+
+low_priority_components:
+  - "User authentication and profiles"
+  - "Item catalog management"
+  - "Analytics dashboard for content creators"
+  - "Email recommendation delivery"
+  - "Compliance and privacy controls"
+
+failure_scenarios:
+  - scenario: "New blockbuster item released — millions want it but model hasn't learned yet"
+    focus: "Cold start for new items, trending/popularity boosting, explore-exploit tradeoff, early signal amplification"
+  - scenario: "Model trained on implicit feedback (clicks) optimizes for clickbait, not satisfaction"
+    focus: "Offline vs online metric misalignment, dwell time signals, user satisfaction surveys, debiasing implicit feedback"
+  - scenario: "Recommendation feature computation takes 200ms — exceeds latency budget"
+    focus: "Pre-computed features in cache, approximate real-time features, feature importance pruning, async feature updates"
+  - scenario: "90% of recommendations are from same genre — lacks diversity"
+    focus: "Diversity injection via MMR (maximal marginal relevance), calibration to user's genre distribution, determinantal point processes"
+  - scenario: "Retrained model performs worse on A/B test despite better offline metrics"
+    focus: "Offline-online metric gap, dataset bias, position bias in training data, temporal drift, interaction logging pipeline bugs"
+  - scenario: "Popular items get more exposure creating rich-get-richer feedback loop"
+    focus: "Popularity bias correction, exploration bonus for tail items, fairness constraints, propensity score weighting"
+  - scenario: "User switches device mid-session — recommendations reset, no cross-device continuity"
+    focus: "Cross-device session stitching, real-time user state synchronization, eventual consistency in user profile, multi-device tracking"
+
+deep_dive_focus:
+  - component: "Two-stage architecture: candidate generation + ranking"
+    why: "Candidate retrieval using ANN on embeddings (FAISS/ScaNN), multiple retrieval strategies (collab, content, trending), merging 1000s candidates, ranking model complexity tradeoffs"
+  - component: "Offline vs online metric alignment"
+    why: "Replay-based offline evaluation, temporal train/test split, position bias correction in logs, propensity scoring, streaming evaluation in production"
+  - component: "Cold start problem for new users and items"
+    why: "Content-based features for new items, explore-exploit (epsilon-greedy, Thompson sampling), demographic-based initialization, few-shot learning, transfer learning from similar items"
+  - component: "Real-time feature computation and serving"
+    why: "Feature store architecture, pre-computed vs on-demand features, feature freshness SLA, cache invalidation strategy, feature embedding tables"
+
+scoring_benchmarks:
+  exceptional: "Implements two-stage candidate generation + ranking with specific ANN algorithms (FAISS/HNSW), discusses embedding space design and negative sampling strategy, addresses offline-online metric gap with propensity scoring and position bias correction, solves cold start with explore-exploit algorithms (UCB, Thompson sampling), handles real-time features with tiered caching strategy, explains diversity via MMR or DPP, discusses A/B testing with guard-rails and early stopping"
+  solid: "Mentions collaborative filtering with matrix factorization or embeddings, basic two-tower architecture, offline training with AUC/NDCG metrics, acknowledges cold start problem with popularity baseline, mentions A/B testing for model rollout, but lacks depth on offline-online gap, feature engineering pipeline, or diversity mechanisms"
+  weak: "Treats it like simple user-item matrix with cosine similarity or kNN, no discussion of candidate generation vs ranking, no strategy for cold start, no mention of offline-online metric challenges, no feature engineering or real-time serving architecture"
