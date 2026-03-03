@@ -47,6 +47,7 @@ def test_list_available():
     ids = [s["id"] for s in scenarios]
     assert "url-shortener" in ids
     assert "payment-gateway" in ids
+    assert "ride-sharing" in ids
 
 
 # Test 6: Scope answers exist
