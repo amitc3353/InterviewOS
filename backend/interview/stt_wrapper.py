@@ -1,0 +1,215 @@
+"""STT wrapper with timeout and error handling."""
+
+import asyncio
+import logging
+from typing import AsyncIterator, Optional
+
+from livekit import rtc
+from livekit.agents import stt
+
+logger = logging.getLogger(__name__)
+
+
+class TimeoutSTT(stt.STT):
+    """
+    STT wrapper that adds timeout and error handling to any STT implementation.
+
+    Wraps STT stream operations with asyncio.wait_for to prevent hanging.
+    On timeout or error, logs the issue and returns empty results.
+    """
+
+    def __init__(
+        self,
+        wrapped_stt: stt.STT,
+        timeout: float = 5.0,
+    ):
+        """
+        Initialize timeout STT wrapper.
+
+        Args:
+            wrapped_stt: The underlying STT implementation to wrap
+            timeout: Maximum seconds to wait for STT recognition (default: 5.0)
+        """
+        super().__init__()
+        self._wrapped_stt = wrapped_stt
+        self._timeout = timeout
+        self._turn_number = 0
+
+    async def recognize(
+        self,
+        *,
+        buffer: rtc.AudioFrame,
+        language: Optional[str] = None,
+    ) -> stt.SpeechEvent:
+        """
+        Recognize speech from audio buffer with timeout protection.
+
+        Args:
+            buffer: Audio frame to transcribe
+            language: Optional language code
+
+        Returns:
+            SpeechEvent with transcription or empty event on timeout/error
+        """
+        self._turn_number += 1
+        start_time = asyncio.get_event_loop().time()
+
+        try:
+            # Wrap recognition with timeout
+            event = await asyncio.wait_for(
+                self._wrapped_stt.recognize(buffer=buffer, language=language),
+                timeout=self._timeout,
+            )
+
+            duration = asyncio.get_event_loop().time() - start_time
+
+            # Check for empty response
+            if not event or not event.alternatives or not event.alternatives[0].text.strip():
+                logger.warning(
+                    "STT returned empty response — turn=%d duration=%.2fs",
+                    self._turn_number,
+                    duration,
+                )
+                # Return empty event to trigger recovery logic
+                return stt.SpeechEvent(
+                    type=stt.SpeechEventType.FINAL_TRANSCRIPT,
+                    alternatives=[stt.SpeechData(text="", language="")],
+                )
+
+            logger.debug(
+                "STT recognized text in %.2fs: %s",
+                duration,
+                event.alternatives[0].text[:50],
+            )
+            return event
+
+        except asyncio.TimeoutError:
+            duration = asyncio.get_event_loop().time() - start_time
+            logger.error(
+                "STT timeout after %.2fs — turn=%d",
+                duration,
+                self._turn_number,
+            )
+            # Return empty event to trigger recovery logic
+            return stt.SpeechEvent(
+                type=stt.SpeechEventType.FINAL_TRANSCRIPT,
+                alternatives=[stt.SpeechData(text="", language="")],
+            )
+
+        except Exception as e:
+            duration = asyncio.get_event_loop().time() - start_time
+            logger.error(
+                "STT error after %.2fs — turn=%d error=%s",
+                duration,
+                self._turn_number,
+                e,
+                exc_info=True,
+            )
+            # Return empty event to trigger recovery logic
+            return stt.SpeechEvent(
+                type=stt.SpeechEventType.FINAL_TRANSCRIPT,
+                alternatives=[stt.SpeechData(text="", language="")],
+            )
+
+    def stream(
+        self,
+        *,
+        language: Optional[str] = None,
+    ) -> "TimeoutSpeechStream":
+        """
+        Create a streaming recognition session with timeout protection.
+
+        Args:
+            language: Optional language code
+
+        Returns:
+            TimeoutSpeechStream that wraps the underlying stream
+        """
+        wrapped_stream = self._wrapped_stt.stream(language=language)
+        return TimeoutSpeechStream(
+            wrapped_stream=wrapped_stream,
+            timeout=self._timeout,
+            turn_number=self._turn_number,
+        )
+
+
+class TimeoutSpeechStream(stt.SpeechStream):
+    """
+    Speech stream wrapper that adds timeout protection to streaming STT.
+    """
+
+    def __init__(
+        self,
+        wrapped_stream: stt.SpeechStream,
+        timeout: float,
+        turn_number: int,
+    ):
+        """
+        Initialize timeout speech stream.
+
+        Args:
+            wrapped_stream: The underlying speech stream to wrap
+            timeout: Maximum seconds to wait for each STT event
+            turn_number: Current turn number for logging
+        """
+        super().__init__()
+        self._wrapped_stream = wrapped_stream
+        self._timeout = timeout
+        self._turn_number = turn_number
+
+    async def __anext__(self) -> stt.SpeechEvent:
+        """
+        Get next speech event with timeout protection.
+
+        Returns:
+            SpeechEvent from underlying stream
+
+        Raises:
+            StopAsyncIteration: When stream ends
+        """
+        try:
+            # Wrap each event with timeout
+            event = await asyncio.wait_for(
+                self._wrapped_stream.__anext__(),
+                timeout=self._timeout,
+            )
+            return event
+
+        except asyncio.TimeoutError:
+            logger.error(
+                "STT stream timeout after %.2fs — turn=%d",
+                self._timeout,
+                self._turn_number,
+            )
+            # End the stream on timeout
+            raise StopAsyncIteration
+
+        except Exception as e:
+            logger.error(
+                "STT stream error — turn=%d error=%s",
+                self._turn_number,
+                e,
+                exc_info=True,
+            )
+            # End the stream on error
+            raise StopAsyncIteration
+
+    async def aclose(self):
+        """Close the underlying stream."""
+        await self._wrapped_stream.aclose()
+
+    def push_frame(self, frame: rtc.AudioFrame):
+        """Push audio frame to underlying stream."""
+        self._wrapped_stream.push_frame(frame)
+
+    async def flush(self):
+        """Flush underlying stream."""
+        try:
+            await asyncio.wait_for(
+                self._wrapped_stream.flush(),
+                timeout=self._timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("STT stream flush timeout after %.2fs", self._timeout)
+        except Exception as e:
+            logger.error("STT stream flush error: %s", e)

@@ -16,6 +16,7 @@ from ..models.scorecard import InterviewScorecard
 from ..interview.phase_manager import PhaseManager
 from ..interview.response_parser import StreamingResponseParser
 from ..interview.scoring_engine import ScoringEngine
+from ..interview.stt_wrapper import TimeoutSTT
 from ..interview.tts_pronunciations import normalize_for_tts as _normalize_for_tts
 
 logger = logging.getLogger(__name__)
@@ -101,12 +102,12 @@ class InterviewAgent(Agent):
             logger.info("Session completed — not generating further LLM responses")
             return  # yields nothing; LiveKit session continues silently until participant leaves
 
-        # --- Record user message (unchanged logic) ---
+        # --- Record user message and detect STT failures ---
         messages_list = chat_ctx.messages()
+        user_text = ""
         if messages_list:
             latest_msg = messages_list[-1]
             if latest_msg.role == "user":
-                user_text = ""
                 for content in latest_msg.content:
                     if isinstance(content, str):
                         user_text += content
@@ -115,6 +116,25 @@ class InterviewAgent(Agent):
                 if user_text:
                     self.interview_session.state.add_message("user", user_text)
                     logger.debug(f"Recorded user message: {user_text[:100]}...")
+
+        # --- STT failure recovery: Generate fallback response for empty/timeout ---
+        # If STT timeout or empty response, skip LLM and send recovery message directly
+        if not user_text or not user_text.strip():
+            logger.warning(
+                "Empty STT response detected — turn=%d phase=%s",
+                self.interview_session.state.total_turn_count,
+                self.interview_session.state.phase.value,
+            )
+            recovery_text = "Sorry, I didn't catch that. Can you repeat?"
+            recovery_chunk = llm.ChatChunk(
+                id="stt_recovery",
+                delta=llm.ChoiceDelta(role="assistant", content=recovery_text),
+            )
+            yield recovery_chunk
+            # Record recovery message in history
+            self.interview_session.state.add_message("assistant", recovery_text)
+            logger.info("STT recovery message sent: %s", recovery_text)
+            return  # Skip LLM processing for this turn
 
         # --- KV-cache split prompts: static (cached) + dynamic (per-turn) ---
         # First turn: Set static system prompt (gets KV-cached by LLM)
@@ -435,11 +455,19 @@ async def entrypoint(ctx: JobContext):
     interview_agent = InterviewAgent(config, scenario_text, scenario_metadata)
     
     # Create agent session
+    # Wrap Deepgram STT with timeout and error handling
+    base_stt = deepgram.STT(
+        api_key=config.deepgram_api_key,
+        model="nova-2",
+    )
+    wrapped_stt = TimeoutSTT(
+        wrapped_stt=base_stt,
+        timeout=5.0,
+    )
+    logger.info("STT configured with 5s timeout and error recovery")
+
     session_kwargs = dict(
-        stt=deepgram.STT(
-            api_key=config.deepgram_api_key,
-            model="nova-2",
-        ),
+        stt=wrapped_stt,
         llm=anthropic.LLM(
             model=config.llm_model,
             api_key=config.anthropic_api_key,
