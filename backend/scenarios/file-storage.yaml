@@ -1,0 +1,89 @@
+id: file-storage
+name: "Design a Distributed File Storage System"
+archetype: "platform-infra"
+description: |
+  Design a cloud file storage and synchronization system like Dropbox, Google Drive,
+  or OneDrive. The system should support file upload/download, real-time sync across
+  devices, deduplication to save storage, chunking for efficient transfers, conflict
+  resolution for concurrent edits, versioning for file history, and efficient metadata
+  management for billions of files.
+
+complexity_notes: |
+  At Staff level, this goes beyond simple file upload/download. Push toward:
+  content-defined chunking with Rabin fingerprinting, block-level deduplication across
+  users while maintaining privacy, sync protocol design for delta updates, operational
+  transformation or CRDT for conflict resolution, metadata sharding and indexing at
+  billions of files scale, version storage with delta compression, offline editing
+  with eventual consistency, and handling massive file fanout (shared folder with
+  thousands of collaborators).
+
+scope_answers:
+  total_users: "500 million active users globally"
+  total_files: "100 billion files stored across all users"
+  storage_capacity: "1 exabyte (1000 PB) total storage"
+  upload_throughput: "1 million files uploaded per minute at peak"
+  sync_latency: "What's acceptable? Target p95 < 10s for cross-device sync."
+  file_size_range: "Range from 1KB documents to 50GB videos — how to handle?"
+  deduplication_scope: "Per-user only or cross-user (with privacy considerations)?"
+  versioning_retention: "How many versions? 30-day retention vs unlimited?"
+  conflict_resolution: "Automatic merge, last-write-wins, or manual resolution?"
+  offline_support: "Full offline editing with sync when back online?"
+  sharing_model: "Individual file sharing, folder sharing, public links?"
+  consistency_model: "Strong consistency or eventual consistency acceptable?"
+
+critical_components:
+  - name: "Chunking and deduplication strategy"
+    why: "Content-defined chunking (Rabin fingerprinting) vs fixed-size chunks, block-level deduplication with SHA-256 content addressing, cross-user dedup with convergent encryption for privacy, chunk size selection (4MB typical), handling small files"
+  - name: "Sync protocol and delta transfer"
+    why: "Client-server sync protocol design, Merkle tree for efficient diff detection, delta sync to transfer only changed chunks, handling out-of-order chunk arrival, resumable uploads, conflict detection before write"
+  - name: "Metadata storage and indexing"
+    why: "Billions of file metadata records (path, size, hash, permissions, versions), sharding strategy (user-based, hash-based), efficient path lookup with prefix trees, handling file moves and renames, tombstones for deletes"
+  - name: "Versioning and history management"
+    why: "Delta-based version storage (only store diffs), version chain compaction, retention policies (time-based, count-based), restoring from old versions, garbage collection of unreferenced chunks"
+  - name: "Conflict resolution mechanism"
+    why: "Detecting concurrent edits (vector clocks, version vectors), operational transformation vs CRDT for text files, last-write-wins vs merge for binary files, conflict notification to users, preserving all versions during conflict"
+  - name: "File sharing and permissions model"
+    why: "Access control lists (ACLs), share links with expiration, folder-level sharing with permission inheritance, handling shared folder with 10k+ users (fanout problem), permission revocation propagation"
+
+low_priority_components:
+  - "Web/mobile UI for file browsing"
+  - "Desktop sync client implementation"
+  - "Thumbnail generation service"
+  - "Full-text search indexing"
+  - "Activity feed and notifications"
+  - "Trash/recycle bin management"
+
+failure_scenarios:
+  - scenario: "Two users edit same file offline, both sync when online — conflict"
+    focus: "Vector clock implementation for causality tracking, conflict detection algorithm, preserving both versions, user notification, merge strategies (text vs binary)"
+  - scenario: "User uploads 100GB file, connection drops at 90% — must resume"
+    focus: "Chunked upload with checkpoints, resumable upload protocol, chunk-level retry, deduplicating already-uploaded chunks, idempotency of chunk writes"
+  - scenario: "Deduplication reveals user has same file as another user — privacy leak risk"
+    focus: "Convergent encryption (encrypt chunks with content hash), cannot dedupe encrypted data without revealing content, proof-of-ownership protocol, privacy vs storage efficiency tradeoff"
+  - scenario: "User renames folder with 1 million files — metadata update storm"
+    focus: "Lazy propagation of rename, path normalization, avoiding full tree traversal, eventual consistency for renames, handling concurrent operations during rename"
+  - scenario: "Shared folder has 10,000 collaborators — file update causes massive fanout"
+    focus: "Notification batching and throttling, eventual consistency for large shares, pull-based sync vs push notifications, preventing thundering herd on sync"
+  - scenario: "Storage node failure loses chunks — need to recover from replication"
+    focus: "Erasure coding (Reed-Solomon) vs full replication tradeoff, detecting data loss, triggering re-replication, placement policy for replicas, handling cascading failures"
+  - scenario: "User with 100 versions per file hits retention limit — which to keep?"
+    focus: "Version pruning strategies (exponential backoff, keep milestones), delta chain compaction to reduce storage, balancing storage cost vs recoverability"
+  - scenario: "Metadata database shard becomes hot due to popular shared folder"
+    focus: "Metadata sharding strategy (user-based, file-hash-based, hybrid), detecting hotspots, read replicas for hot metadata, caching layer (Redis), rate limiting per user"
+  - scenario: "Sync loop — client A syncs to server, triggers client B, triggers client A again"
+    focus: "Version vectors to detect causality, monotonic version numbering, sync state reconciliation, idempotency of sync operations"
+
+deep_dive_focus:
+  - component: "Content-defined chunking with deduplication"
+    why: "Rabin fingerprinting algorithm for chunk boundaries, chunk size selection and min/max thresholds, SHA-256 for content addressing, reference counting for garbage collection, handling deduplication with encryption (convergent encryption vs MLE)"
+  - component: "Sync protocol with delta transfer"
+    why: "Merkle tree construction for efficient diff, block-level delta algorithm (rsync-style), handling out-of-order chunk delivery, resumable upload/download, conflict detection before commit, optimistic locking"
+  - component: "Conflict resolution with vector clocks"
+    why: "Vector clock implementation for tracking causality, detecting concurrent modifications, three-way merge for text files (operational transformation), preserving conflicting versions, user notification workflow"
+  - component: "Metadata sharding and indexing at scale"
+    why: "Sharding strategy for billions of files (consistent hashing by user_id + file_path), secondary indexes for search (path prefix, file type, modified date), handling hotspots, cache-aside pattern with Redis"
+
+scoring_benchmarks:
+  exceptional: "Implements content-defined chunking with Rabin fingerprinting and explains boundary selection criteria, discusses block-level deduplication with SHA-256 content addressing and reference counting, addresses cross-user dedup privacy concerns with convergent encryption or proof-of-ownership protocol, designs sync protocol with Merkle trees for efficient diff and delta transfer for only changed chunks, handles conflict resolution with vector clocks and preserves all versions during conflict, implements metadata sharding by user_id with secondary indexes and caching, discusses version storage with delta compression and exponential retention policy, handles shared folder fanout with pull-based sync and notification throttling, uses erasure coding (Reed-Solomon) for storage efficiency vs replication"
+  solid: "Mentions chunking files into blocks for efficient upload, basic deduplication by file hash, sync protocol to detect changed files, storing multiple versions in S3 with timestamps, conflict detection by comparing timestamps (last-write-wins), metadata in SQL database with user_id index, but lacks depth on content-defined chunking, delta sync optimization, vector clocks for causality, or handling edge cases like massive fanout and dedup privacy"
+  weak: "Treats it like simple file upload to S3 with full file transfers, no discussion of chunking or deduplication, sync by polling for changes, versioning by copying entire files, conflicts handled by timestamp comparison only, metadata in monolithic database with no sharding strategy — missing all Staff-level distributed systems complexity"
