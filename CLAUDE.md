@@ -528,3 +528,43 @@ Per 45-minute interview session:
 - **Total**: ~$0.43/session
 
 Keep cost efficiency in mind when modifying the pipeline.
+
+## AI Agent Efficiency Guidelines
+
+### Context Management
+- Read this file FIRST, then go directly to the relevant files — don't explore the whole codebase
+- For backend changes, the key files are almost always in `backend/agents/`, `backend/interview/`, or `backend/models/`
+- For test changes, look at `backend/tests/` for existing patterns before writing new tests
+- If modifying a file, read ONLY that file and its direct imports — not the entire directory
+- Keep tool calls focused: use Grep to find specific patterns instead of reading entire files
+
+### Most-Changed Files (Quick Reference)
+- `backend/agents/interview_agent.py` — Main agent orchestration, llm_node, tts_node, AgentSession
+- `backend/interview/response_parser.py` — JSON parsing with fallback chain
+- `backend/interview/phase_manager.py` — Interview phase transitions and system prompts
+- `backend/models/session.py` — SessionState, InterviewPhase, conversation history
+- `backend/config.py` — All configuration and environment variables
+- `backend/interview/scoring_engine.py` — Post-interview scoring logic
+
+### Testing is Mandatory
+Every PR must include tests. For every file you create or modify:
+1. Add unit tests covering happy path AND error cases
+2. If modifying async code, use `AsyncMock` and `pytest.mark.asyncio`
+3. Mock ALL external services (Deepgram, Claude API, Cartesia, LiveKit)
+4. Run `pytest backend/tests/` before committing to verify nothing is broken
+5. Aim for: 1 test file per source file, minimum 3 tests per new function
+
+### Code Quality Checklist (Before Committing)
+- [ ] All functions have type hints
+- [ ] All new classes/functions have docstrings
+- [ ] No hardcoded values (use config.py or constants)
+- [ ] Error handling for all external calls (try/except with logging)
+- [ ] Tests pass: `pytest backend/tests/`
+- [ ] Import order: stdlib → third-party → local
+
+### Common Patterns in This Codebase
+- **Error handling**: `try/except` with specific exceptions, log error, return fallback
+- **Async operations**: `asyncio.wait_for(coro, timeout=X)` for timeouts
+- **Configuration**: `AgentConfig.from_env()` pattern
+- **Response parsing**: Always use the fallback chain (json → regex → raw)
+- **Session state**: All state goes through `SessionState` dataclass, never globals
