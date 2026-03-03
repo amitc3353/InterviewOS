@@ -1,0 +1,88 @@
+id: distributed-task-scheduler
+name: "Design a Distributed Task Scheduler"
+archetype: "platform-infra"
+description: |
+  Design a distributed task scheduling system like Celery, Airflow, or Temporal.
+  The system should support job queuing, priority scheduling, cron-like recurring
+  tasks, dependency-based workflows (DAGs), exactly-once execution guarantees,
+  horizontal scaling of workers, comprehensive failure recovery, and retry policies.
+
+complexity_notes: |
+  At Staff level, this goes beyond simple queue workers. Push toward:
+  exactly-once execution semantics with idempotency keys, distributed locking
+  for job claiming, priority queue implementation at scale, DAG scheduling with
+  cycle detection, handling clock skew for cron scheduling, dead letter queue
+  strategies, backpressure and flow control, worker pool autoscaling, job
+  execution timeouts with graceful cancellation, and handling poison pill jobs.
+
+scope_answers:
+  jobs_per_second: "100,000 jobs submitted per second globally"
+  concurrent_jobs: "1 million jobs executing concurrently across workers"
+  worker_count: "10,000 workers across 100 availability zones"
+  job_types: "One-time, recurring (cron), dependency-based (DAG workflows)"
+  execution_guarantee: "Exactly-once execution required? Or at-least-once acceptable?"
+  latency: "What's acceptable delay from submission to execution? Target p99 < 10s for high-priority jobs."
+  max_job_duration: "What's the longest job runtime? Minutes? Hours? Days?"
+  retry_policy: "Max retries? Exponential backoff? Dead letter queue?"
+  priority_levels: "How many priority tiers? 3-5 levels typical."
+  job_dependencies: "Support DAG workflows with dependencies between jobs?"
+  persistence: "Durable job storage? What happens if scheduler restarts?"
+  monitoring: "Real-time job status tracking and observability required?"
+
+critical_components:
+  - name: "Job queue architecture and partitioning"
+    why: "Multiple priority queues, partitioning strategy (by tenant, job type, priority), distributed queue vs centralized (Kafka vs RabbitMQ vs SQS), handling head-of-line blocking"
+  - name: "Exactly-once execution semantics"
+    why: "Idempotency keys, distributed locking for job claiming, two-phase commit for state updates, handling duplicate submissions, zombie job detection"
+  - name: "Worker pool management and job claiming"
+    why: "Pull vs push model, distributed locking (Redis, ZooKeeper, etcd), heartbeat mechanism, worker registration/deregistration, load balancing across workers"
+  - name: "Scheduling algorithms and priority handling"
+    why: "Priority queue implementation (heap, skip list), fair-share scheduling to prevent starvation, weighted round-robin, handling priority inversion"
+  - name: "Failure recovery and retry logic"
+    why: "Exponential backoff with jitter, max retry limits, dead letter queue, transient vs permanent failure classification, circuit breakers, job timeout handling"
+  - name: "Cron scheduling with clock skew handling"
+    why: "Distributed cron evaluation, clock skew mitigation, handling missed schedules, exactly-once cron job execution, timezone support"
+  - name: "DAG scheduling and dependency resolution"
+    why: "Topological sort for execution order, cycle detection, fan-out/fan-in patterns, handling partial failures in DAG, retry semantics for dependent jobs"
+
+low_priority_components:
+  - "Admin UI for job monitoring and management"
+  - "Job result storage and retrieval API"
+  - "Historical job execution analytics"
+  - "Cost tracking and resource attribution"
+  - "Client SDKs for job submission"
+
+failure_scenarios:
+  - scenario: "Worker crashes mid-job execution — job gets stuck in 'running' state"
+    focus: "Heartbeat-based job timeout, job requeuing logic, exactly-once guarantees with distributed locks, zombie job cleanup"
+  - scenario: "Job submitted twice with same payload — must execute exactly once"
+    focus: "Idempotency key design, deduplication window, distributed lock acquisition before execution, idempotent job state updates"
+  - scenario: "High-priority queue starves low-priority jobs for hours"
+    focus: "Priority aging to prevent starvation, fair-share scheduling, weighted round-robin, priority queue backpressure"
+  - scenario: "Poison pill job causes worker to crash repeatedly — entire queue blocked"
+    focus: "Job-level exception handling, retry limits, dead letter queue, worker isolation, circuit breaker pattern"
+  - scenario: "Clock skew causes cron job to execute multiple times or miss execution"
+    focus: "Centralized clock source, logical clocks for ordering, deduplication of cron triggers, handling time zone changes"
+  - scenario: "DAG workflow with 100 jobs — one job in middle fails after 50 completed"
+    focus: "Partial DAG recovery, retry semantics for dependent jobs, checkpoint and resume, idempotent job execution"
+  - scenario: "Queue backs up to 10 million jobs — workers can't keep up"
+    focus: "Backpressure and flow control, autoscaling workers, priority-based shedding, circuit breaker to reject new jobs"
+  - scenario: "Distributed lock service (Redis/ZooKeeper) goes down — workers can't claim jobs"
+    focus: "Graceful degradation, fail-safe vs fail-open, local in-memory fallback, lock lease expiration, split-brain prevention"
+  - scenario: "Long-running job exceeds timeout but hasn't finished — need graceful cancellation"
+    focus: "Cooperative cancellation signals, force-kill after grace period, cleanup of partial state, retry semantics after timeout"
+
+deep_dive_focus:
+  - component: "Exactly-once execution with distributed locking"
+    why: "Idempotency key implementation, distributed lock acquisition (Redis SETNX, ZooKeeper ephemeral nodes), lock lease expiration, handling lock holder crashes, fencing tokens"
+  - component: "Priority queue implementation at scale"
+    why: "Multi-level feedback queue, skip list vs heap trade-offs, sharding priority queues, avoiding priority inversion, preventing starvation with aging"
+  - component: "DAG scheduling and dependency resolution"
+    why: "Topological sort algorithm, cycle detection, incremental scheduling, handling fan-out/fan-in, partial failure recovery, checkpoint and resume"
+  - component: "Worker heartbeat and job timeout mechanism"
+    why: "Heartbeat interval selection, timeout threshold tuning, zombie job detection, job requeuing vs marking as failed, lease renewal protocol"
+
+scoring_benchmarks:
+  exceptional: "Implements exactly-once execution with idempotency keys and distributed locks (Redis SETNX or ZooKeeper), discusses fencing tokens to prevent zombie jobs, explains priority queue with aging to prevent starvation, handles DAG scheduling with cycle detection and partial failure recovery, addresses clock skew for cron with centralized time source, implements exponential backoff with jitter and circuit breakers, shards job queue by priority and tenant, discusses at-most-once vs at-least-once vs exactly-once tradeoffs with concrete examples"
+  solid: "Mentions distributed queue (Kafka/RabbitMQ) for job storage, basic priority levels, worker heartbeat for crash detection, retry with exponential backoff, dead letter queue, simple DAG support with topological sort, but lacks depth on exactly-once semantics, distributed locking details, or advanced failure scenarios"
+  weak: "Treats it like a simple queue with workers polling for jobs, no discussion of distributed locking, exactly-once guarantees, priority handling at scale, or DAG dependency resolution — just 'add jobs to queue, workers process them'"

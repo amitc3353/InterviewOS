@@ -1,0 +1,86 @@
+id: ecommerce-inventory
+name: "Design an E-Commerce Inventory Management System"
+archetype: "platform-infra"
+description: |
+  Design a distributed inventory management system for a large e-commerce platform.
+  The system must track stock levels across multiple warehouses, prevent overselling,
+  handle concurrent purchase attempts, support inventory reservations during checkout,
+  manage distributed transactions across services, and coordinate warehouse fulfillment.
+  Must support flash sales, real-time stock synchronization, and multi-region deployments.
+
+complexity_notes: |
+  At Staff level, this goes beyond simple stock counting. Push toward:
+  distributed locking for inventory reservations, optimistic vs pessimistic concurrency
+  control tradeoffs, two-phase commit vs saga patterns for distributed transactions,
+  handling phantom inventory and overselling during high concurrency, warehouse
+  allocation algorithms (nearest warehouse vs inventory availability), inventory
+  rebalancing strategies, eventual consistency with compensation logic, and CAP
+  theorem tradeoffs for multi-region inventory.
+
+scope_answers:
+  products: "100 million SKUs globally across all warehouses"
+  warehouses: "500 warehouses across 50 countries"
+  orders_per_second: "50,000 orders per second during peak (Black Friday/flash sales)"
+  concurrent_checkouts: "500,000 concurrent checkout sessions with reserved inventory"
+  inventory_updates: "1 million inventory updates per minute (sales, returns, restocks)"
+  consistency: "Strong consistency for stock counts or eventual consistency acceptable?"
+  latency: "What's acceptable for stock check? Target p99 < 100ms."
+  overselling_tolerance: "Zero tolerance or allow small percentage with compensation?"
+  reservation_timeout: "How long to hold inventory during checkout? 10 minutes typical."
+  multi_region: "Inventory shared globally or partitioned by region?"
+  warehouse_allocation: "Optimize for proximity, inventory levels, or split shipments?"
+  flash_sale_scale: "Handle 1 million requests in 1 second for single SKU?"
+
+critical_components:
+  - name: "Distributed inventory locking and reservations"
+    why: "Pessimistic locking (SELECT FOR UPDATE) vs optimistic locking (version numbers), distributed locks with Redis/ZooKeeper, reservation timeout handling, deadlock prevention, handling lock holder crashes"
+  - name: "Overselling prevention with high concurrency"
+    why: "Race condition mitigation, atomic compare-and-swap operations, phantom inventory detection, handling network retries and duplicate requests, idempotency guarantees"
+  - name: "Distributed transaction coordination"
+    why: "Two-phase commit (2PC) for strong consistency vs saga pattern for eventual consistency, compensation logic for rollbacks, handling partial failures across inventory/payment/shipping services"
+  - name: "Multi-warehouse allocation strategy"
+    why: "Warehouse selection algorithm (nearest vs availability), split shipment decisions, inventory rebalancing triggers, handling stockouts with substitutions, cost optimization (shipping vs inventory holding)"
+  - name: "Stock synchronization across regions"
+    why: "Multi-region consistency model (active-active vs active-passive), conflict resolution for concurrent sales, inventory replication lag, handling network partitions, reserved vs available vs committed inventory states"
+  - name: "Flash sale and burst traffic handling"
+    why: "Queue-based fairness (virtual waiting room), rate limiting per user/IP, inventory pre-allocation in cache, write batching and coalescing, database hotspot prevention"
+
+low_priority_components:
+  - "Inventory forecasting and demand prediction"
+  - "Purchase order management for restocking"
+  - "Warehouse management UI and barcode scanning"
+  - "Historical inventory analytics and reporting"
+  - "SKU catalog management and product attributes"
+
+failure_scenarios:
+  - scenario: "1000 users attempt to buy last 10 units of product simultaneously"
+    focus: "Atomic decrement with compare-and-swap, optimistic locking with version numbers, queue-based ordering, handling thundering herd, compensating oversold orders"
+  - scenario: "User reserves inventory during checkout then abandons cart — inventory stuck"
+    focus: "Reservation timeout mechanism, background job for expired reservation cleanup, graceful release vs hard timeout, handling payment gateway delays"
+  - scenario: "Distributed transaction fails after inventory decremented but payment service times out"
+    focus: "Two-phase commit rollback, saga compensation logic, idempotent retry handling, eventual consistency reconciliation, dead letter queue for stuck transactions"
+  - scenario: "Network partition splits warehouses — same product sold in both regions"
+    focus: "CAP theorem tradeoffs (CP vs AP), conflict-free replicated data types (CRDTs), last-write-wins vs merge logic, reserved inventory tracking, post-partition reconciliation"
+  - scenario: "Inventory database experiences hotspot — single SKU receives 100k queries/sec"
+    focus: "Read replicas for stock checks, caching with TTL and cache invalidation, write batching, sharding strategy (by SKU range vs warehouse), materialized view for aggregations"
+  - scenario: "Warehouse runs out of stock after order placed — need to reallocate"
+    focus: "Warehouse substitution logic, customer notification, shipping cost adjustment, inventory sync delay detection, multi-warehouse splitting"
+  - scenario: "Flash sale creates 10x oversell due to cache staleness and replication lag"
+    focus: "Cache invalidation strategy, read-after-write consistency, quorum reads/writes, circuit breaker to fall back to database, monitoring and alerting for inventory drift"
+  - scenario: "Return/refund creates race condition — inventory incremented twice"
+    focus: "Idempotency keys for returns, distributed lock acquisition, optimistic locking with retry, event sourcing for audit trail, detecting and reconciling duplicate credits"
+
+deep_dive_focus:
+  - component: "Optimistic vs pessimistic concurrency control"
+    why: "Row-level locking (SELECT FOR UPDATE) vs version-based optimistic locking, deadlock risk and prevention, retry logic with exponential backoff, contention and throughput tradeoffs"
+  - component: "Distributed saga pattern for order fulfillment"
+    why: "Choreography vs orchestration, compensation transactions for rollback, idempotent operations, handling partial failures, event sourcing for state recovery, timeout and retry policies"
+  - component: "Inventory reservation state machine"
+    why: "State transitions: available → reserved → committed → shipped, timeout handling, state cleanup, handling edge cases (double reservation, expired payment), eventual consistency with compensation"
+  - component: "Multi-region inventory consistency model"
+    why: "Active-active replication with conflict resolution, reserved vs available inventory tracking, quorum-based reads/writes, handling network partitions, anti-entropy reconciliation"
+
+scoring_benchmarks:
+  exceptional: "Implements distributed locking with fencing tokens or optimistic locking with version numbers and explains retry strategy, discusses 2PC vs saga pattern with concrete compensation logic examples, prevents overselling with atomic compare-and-swap and idempotency keys, handles flash sales with queue-based fairness and write batching, explains multi-region consistency with quorum reads/writes or CRDTs, addresses reservation timeout with background cleanup jobs, implements warehouse allocation with cost optimization (shipping vs split shipments), discusses CAP theorem tradeoffs with specific CP vs AP choice and justification"
+  solid: "Mentions distributed locks (Redis) or database transactions for inventory updates, basic reservation timeout mechanism, simple warehouse selection by proximity, eventual consistency with retry logic, row-level locking to prevent overselling, but lacks depth on saga patterns, optimistic concurrency, multi-region conflicts, or flash sale handling"
+  weak: "Treats inventory as simple counter with no discussion of concurrency control, distributed transactions, reservation management, or multi-warehouse coordination — just 'decrement stock on purchase, increment on return'"
