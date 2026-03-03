@@ -1,0 +1,76 @@
+id: distributed-cache
+name: "Design a Distributed Cache System"
+archetype: "platform-infra"
+description: |
+  Design a distributed in-memory cache system like Redis or Memcached. The system
+  should support high-throughput reads/writes, data partitioning across nodes,
+  replication for availability, multiple eviction policies, TTL-based expiration,
+  and support for various data structures (strings, hashes, lists, sets, sorted sets).
+
+complexity_notes: |
+  At Staff level, this goes beyond simple key-value storage. Push toward:
+  consistent hashing with virtual nodes, async replication vs sync replication
+  tradeoffs, approximate LRU implementation at scale, handling clock skew for TTL,
+  split-brain scenarios, hot key detection and mitigation, memory pressure handling,
+  and sharding complex data structures (lists, sorted sets).
+
+scope_answers:
+  operations_per_second: "10 million ops/sec globally (reads + writes)"
+  total_memory: "100TB total cache capacity across all nodes"
+  read_write_ratio: "What ratio? Typical workloads are 80% reads, 20% writes."
+  latency: "What's acceptable? Target p99 < 5ms."
+  availability: "What SLA? 99.99% target?"
+  consistency: "Strong consistency or eventual consistency?"
+  eviction_policy: "LRU, LFU, TTL-based, or hybrid?"
+  data_structures: "Just key-value or also lists, sets, sorted sets, hashes?"
+  persistence: "In-memory only or optional persistence to disk?"
+  multi_tenancy: "Shared cluster or isolated per tenant?"
+  replication_factor: "How many replicas? Trade off durability vs cost."
+
+critical_components:
+  - name: "Sharding and partitioning strategy"
+    why: "Consistent hashing with virtual nodes, rebalancing during node addition/removal, handling range queries on sorted sets, partition key selection"
+  - name: "Replication architecture"
+    why: "Master-slave vs multi-master, synchronous vs asynchronous replication, replica lag monitoring, failover and promotion logic"
+  - name: "Eviction policy implementation"
+    why: "Approximate LRU at scale (sampling-based), LFU with frequency decay, TTL heap or timing wheel, memory pressure detection, eviction storms"
+  - name: "Consistency model and conflict resolution"
+    why: "Quorum reads/writes (R+W>N), vector clocks for multi-master, last-write-wins vs merge semantics, read-your-writes guarantees"
+  - name: "TTL and expiration handling"
+    why: "Passive expiration on access vs active background scanning, clock skew mitigation, tombstone cleanup, expiration event notifications"
+
+low_priority_components:
+  - "Client connection pooling"
+  - "Monitoring and alerting dashboard"
+  - "Admin CLI for cluster management"
+  - "Client SDK and protocol design"
+  - "Backup and restore tooling"
+
+failure_scenarios:
+  - scenario: "Master node crashes mid-write — data loss risk for in-flight operations"
+    focus: "Replication lag, failover time, replica promotion, split-brain prevention with consensus (Raft/Paxos)"
+  - scenario: "Single hot key receives 100k requests/sec causing node overload"
+    focus: "Hot key detection, read replicas for hot keys, client-side caching, request coalescing"
+  - scenario: "Memory pressure triggers mass eviction — cache hit rate drops to 10%"
+    focus: "Eviction storm prevention, gradual eviction, memory quotas per tenant, backpressure to clients"
+  - scenario: "Network partition splits cluster — two masters accept writes (split-brain)"
+    focus: "Quorum-based writes, fencing tokens, last-write-wins vs conflict resolution, detecting and recovering from split-brain"
+  - scenario: "Clock skew causes TTL inconsistency — some nodes expire keys early/late"
+    focus: "NTP synchronization, TTL tolerance windows, leader-based TTL enforcement, logical clocks for ordering"
+  - scenario: "Adding 10 new nodes causes massive data reshuffling and latency spike"
+    focus: "Gradual rebalancing with rate limiting, virtual nodes to minimize data movement, dual-read during migration"
+  - scenario: "Sorted set with 10M elements needs to be sharded across nodes"
+    focus: "Range-based partitioning vs hash-based, maintaining sort order, cross-shard range queries, avoiding hotspots"
+
+deep_dive_focus:
+  - component: "Consistent hashing with virtual nodes"
+    why: "Hash ring implementation, virtual node count selection, minimizing data movement on rebalancing, handling node heterogeneity (different memory sizes)"
+  - component: "Approximate LRU eviction at scale"
+    why: "Sampling-based approach (Redis-style random sampling), maintaining access metadata efficiently, memory overhead of tracking, eviction batch size tuning"
+  - component: "Replication lag and consistency tradeoffs"
+    why: "Synchronous replication impact on write latency, asynchronous replication and eventual consistency, quorum reads/writes, handling stale reads"
+
+scoring_benchmarks:
+  exceptional: "Implements consistent hashing with virtual nodes and explains data movement math, discusses approximate LRU with sampling strategy and memory overhead, addresses split-brain with quorum writes or consensus protocol, handles hot keys with replica promotion or client-side caching, explains TTL implementation with passive + active expiration and clock skew mitigation, shards complex data structures with range partitioning for sorted sets"
+  solid: "Mentions consistent hashing for sharding, master-slave replication with async updates, LRU eviction policy, basic TTL handling, but lacks depth on edge cases like split-brain, hot keys, clock skew, or approximate algorithms at scale"
+  weak: "Treats it like a simple in-memory hash table with no discussion of distribution strategy, replication mechanics, eviction policy details, or failure handling beyond 'add more replicas'"
