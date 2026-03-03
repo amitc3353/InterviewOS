@@ -386,11 +386,18 @@ def prewarm(proc: agents.JobProcess) -> None:
 async def entrypoint(ctx: JobContext):
     """
     Entrypoint for LiveKit agent.
-    
+
     Called when a participant joins the room.
     """
     logger.info(f"Agent starting for room: {ctx.room.name}")
-    
+
+    # Track disconnect state for graceful handling
+    disconnect_state = {
+        "is_disconnected": False,
+        "disconnect_time": None,
+        "shutdown_task": None,
+    }
+
     # Load config
     from ..config import AgentConfig
     config = AgentConfig.from_env()
@@ -472,6 +479,72 @@ async def entrypoint(ctx: JobContext):
         room=ctx.room,
         agent=interview_agent,
     )
+
+    async def handle_graceful_shutdown():
+        """Gracefully shut down the session after prolonged disconnect."""
+        try:
+            logger.info("30s disconnect timeout reached — shutting down session gracefully")
+            # Trigger scoring if not already done
+            if not interview_agent._scoring_triggered:
+                interview_agent._scoring_triggered = True
+                await interview_agent._generate_scorecard()
+            # Close the room connection
+            await ctx.room.disconnect()
+        except Exception as e:
+            logger.error(f"Error during graceful shutdown: {e}", exc_info=True)
+
+    @ctx.room.on("participant_disconnected")
+    def on_participant_disconnected(participant: rtc.RemoteParticipant):
+        """Handle participant disconnect — don't crash, wait for reconnection."""
+        # Only track candidate disconnections (not our agent)
+        if participant.kind == rtc.ParticipantKind.STANDARD:
+            logger.warning(
+                f"Participant disconnected: {participant.identity} — waiting for reconnection"
+            )
+            disconnect_state["is_disconnected"] = True
+            disconnect_state["disconnect_time"] = time.monotonic()
+
+            # Schedule graceful shutdown after 30s if no reconnection
+            async def delayed_shutdown():
+                try:
+                    await asyncio.sleep(30.0)
+                    if disconnect_state["is_disconnected"]:
+                        await handle_graceful_shutdown()
+                except asyncio.CancelledError:
+                    logger.info("Shutdown task cancelled — participant reconnected")
+                except Exception as e:
+                    logger.error(f"Error in delayed shutdown: {e}", exc_info=True)
+
+            # Cancel previous shutdown task if exists
+            if disconnect_state["shutdown_task"]:
+                disconnect_state["shutdown_task"].cancel()
+
+            # Start new shutdown task
+            disconnect_state["shutdown_task"] = asyncio.create_task(delayed_shutdown())
+
+    @ctx.room.on("participant_connected")
+    def on_participant_connected(participant: rtc.RemoteParticipant):
+        """Handle participant reconnection — resume seamlessly if <30s."""
+        if participant.kind == rtc.ParticipantKind.STANDARD:
+            if disconnect_state["is_disconnected"]:
+                disconnect_duration = time.monotonic() - disconnect_state["disconnect_time"]
+                logger.info(
+                    f"Participant reconnected after {disconnect_duration:.1f}s — resuming session"
+                )
+
+                # Cancel shutdown task
+                if disconnect_state["shutdown_task"]:
+                    disconnect_state["shutdown_task"].cancel()
+                    disconnect_state["shutdown_task"] = None
+
+                # Clear disconnect state
+                disconnect_state["is_disconnected"] = False
+                disconnect_state["disconnect_time"] = None
+
+                # Session state is preserved server-side, so resume works automatically
+                logger.info("Session state preserved — participant can continue interview")
+            else:
+                logger.info(f"New participant connected: {participant.identity}")
 
     @session.on("agent_speech_interrupted")
     def on_interrupted():
