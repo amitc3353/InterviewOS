@@ -42,13 +42,14 @@ def test_empty_directory(tmp_path):
 def test_list_available():
     loader = ScenarioLoader()
     scenarios = loader.list_available()
-    assert len(scenarios) == 9
+    assert len(scenarios) == 10
     assert all("id" in s and "name" in s and "archetype" in s for s in scenarios)
     ids = [s["id"] for s in scenarios]
     assert "url-shortener" in ids
     assert "payment-gateway" in ids
     assert "ride-sharing" in ids
     assert "distributed-cache" in ids
+    assert "distributed-task-scheduler" in ids
 
 
 # Test 6: Scope answers exist
