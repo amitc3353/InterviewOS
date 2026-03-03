@@ -1,0 +1,83 @@
+id: video-streaming-platform
+name: "Design a Video Streaming Platform"
+archetype: "platform-infra"
+description: |
+  Design a video streaming platform like YouTube or Vimeo. The system should
+  handle video uploads with transcoding, adaptive bitrate streaming (ABR),
+  global CDN distribution, storage optimization, real-time analytics, and
+  recommendation systems. Support live streaming and handle millions of
+  concurrent viewers.
+
+complexity_notes: |
+  At Staff level, this is about media processing at scale and global distribution.
+  Push toward: adaptive bitrate encoding strategies (HLS/DASH), CDN multi-tier
+  caching with origin shielding, storage tiering (hot/warm/cold) based on popularity,
+  upload resumability and parallel chunk processing, transcoding pipeline optimization
+  with priority queuing, real-time view count aggregation without database hotspots,
+  thumbnail generation and sprite sheets for scrubbing, DRM and content protection,
+  and handling thundering herd on viral videos.
+
+scope_answers:
+  daily_uploads: "500,000 video uploads per day"
+  total_videos: "1 billion videos stored in catalog"
+  concurrent_viewers: "10 million concurrent viewers at peak"
+  video_formats: "Support MP4, MOV, AVI, WebM input formats"
+  output_resolutions: "360p, 480p, 720p, 1080p, 1440p, 4K adaptive bitrate"
+  upload_size: "Max 10GB per video, average 500MB"
+  latency: "What's acceptable for VOD playback start? Live streaming?"
+  storage_cost: "How to optimize for PB-scale storage costs?"
+  cdn_strategy: "Multi-CDN? Edge caching strategy? Origin shield?"
+  transcoding_time: "What SLA for video processing completion?"
+  analytics: "Real-time view counts? Watch time aggregation? Geographic distribution?"
+  recommendations: "Personalized or trending? Real-time or batch?"
+
+critical_components:
+  - name: "Video upload and chunk processing pipeline"
+    why: "Resumable uploads with multipart support, parallel chunk upload, validation and virus scanning, deduplication detection, upload progress tracking"
+  - name: "Transcoding and encoding service"
+    why: "Adaptive bitrate encoding (HLS/DASH manifests), parallel job distribution, priority queuing (live vs VOD), codec selection (H.264/H.265/AV1), thumbnail and sprite generation"
+  - name: "Multi-tier CDN architecture"
+    why: "Origin servers, mid-tier regional caches, edge PoPs, origin shielding, cache warming for viral content, cache key strategies, byte-range request support"
+  - name: "Storage optimization and tiering"
+    why: "Hot/warm/cold storage tiers based on access patterns, object storage (S3/GCS) lifecycle policies, compression strategies, redundancy vs cost tradeoffs"
+  - name: "Real-time analytics aggregation"
+    why: "View count tracking without database hotspots, time-series data for watch time, geographic distribution, streaming aggregation with Kafka/Flink"
+
+low_priority_components:
+  - "User authentication and profiles"
+  - "Comment and like functionality"
+  - "Subscription and notification system"
+  - "Video editing and trimming tools"
+  - "Monetization and ad insertion"
+  - "Content moderation workflows"
+
+failure_scenarios:
+  - scenario: "Video goes viral — 100M views in 1 hour, CDN cache miss storm"
+    focus: "Cache warming strategies, origin shielding, rate limiting origin requests, CDN failover, thundering herd prevention"
+  - scenario: "Transcoding cluster goes down with 10K videos in queue"
+    focus: "Job queue persistence, graceful degradation (serve original until transcoded), retry logic, SLA-based prioritization"
+  - scenario: "CDN provider outage in Asia-Pacific region during peak hours"
+    focus: "Multi-CDN failover, DNS-based routing, health checks, graceful degradation to alternate PoPs"
+  - scenario: "User uploads 4K video that takes 2 hours to transcode — they refresh page constantly"
+    focus: "Async job status polling, WebSocket progress updates, priority lanes for paid users, encoding time estimation"
+  - scenario: "Storage costs doubled due to duplicate videos with slight modifications"
+    focus: "Content-based deduplication with perceptual hashing, delta encoding, reference counting, cost attribution"
+  - scenario: "Database overwhelmed by real-time view count updates for trending video"
+    focus: "Write buffering with batching, eventual consistency model, streaming aggregation, materialized view updates"
+  - scenario: "Live stream drops frames due to transcoder overload"
+    focus: "Priority queuing for live vs VOD, adaptive quality degradation, horizontal scaling triggers, viewer impact mitigation"
+
+deep_dive_focus:
+  - component: "Adaptive bitrate encoding and manifest generation"
+    why: "HLS vs DASH protocol selection, segment duration optimization, bitrate ladder design, codec choice impact on quality/size, GOP alignment for seamless switching"
+  - component: "Multi-tier CDN caching strategy"
+    why: "Origin shielding architecture, cache key design, byte-range request handling, cache invalidation strategy, cost optimization across tiers"
+  - component: "Real-time analytics without database hotspots"
+    why: "Streaming aggregation architecture (Kafka + Flink), time-series bucketing, eventual consistency tradeoffs, materialized view updates, count-min sketch for approximations"
+  - component: "Upload resumability and parallel processing"
+    why: "Chunked upload protocol, multipart S3 upload optimization, chunk validation and retry, progress tracking, parallel transcoding job distribution"
+
+scoring_benchmarks:
+  exceptional: "Designs adaptive bitrate with specific GOP alignment and bitrate ladder math, implements multi-tier CDN with origin shielding and cache warming for viral content, discusses storage tiering with lifecycle policies based on access patterns, handles real-time view counts with streaming aggregation (Kafka + Flink) to avoid database hotspots, addresses upload resumability with multipart protocol and parallel chunk processing, mentions perceptual hashing for deduplication and cost optimization"
+  solid: "Mentions HLS/DASH for adaptive bitrate, basic CDN caching with edge PoPs, transcoding queue with worker pool, S3 storage with some lifecycle management, simple view count aggregation, but lacks depth on cache warming, storage cost optimization, and real-time analytics architecture"
+  weak: "Treats it like simple file upload to storage with direct CDN distribution, no discussion of adaptive bitrate encoding, transcoding pipeline optimization, storage tiering strategies, or real-time analytics challenges at scale"
