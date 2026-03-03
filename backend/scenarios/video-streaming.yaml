@@ -1,0 +1,70 @@
+id: video-streaming
+name: "Design a Video Streaming Platform"
+archetype: "platform-infra"
+description: |
+  Design a video streaming platform like YouTube or Vimeo. The system should
+  handle video uploads, transcode to multiple formats and bitrates, deliver
+  content globally via CDN with adaptive bitrate streaming, track analytics
+  and view counts, optimize storage costs, and support both live streaming
+  and video-on-demand (VOD).
+
+complexity_notes: |
+  At Staff level, this is about global-scale video delivery and storage optimization.
+  Push toward: CDN architecture and edge caching strategies, adaptive bitrate (ABR)
+  implementation and manifest generation (HLS/DASH), upload pipeline with chunked
+  uploads and resumability, transcoding job orchestration at scale, storage tiering
+  and cost optimization, distributed view counting with deduplication, handling
+  live streaming with low latency, and database design for metadata and analytics.
+
+scope_answers:
+  daily_uploads: "500,000 video uploads per day"
+  daily_views: "5 billion video views per day"
+  concurrent_viewers: "10 million concurrent viewers at peak"
+  video_sizes: "Average 500MB, max 10GB per upload"
+  storage_total: "100+ petabytes of video content"
+  cdn_regions: "200+ edge locations globally"
+  transcoding_sla: "90% of videos ready within 10 minutes of upload"
+  latency_vod: "Sub-2 second startup latency for VOD"
+  latency_live: "3-5 second glass-to-glass latency for live streams"
+  retention: "Hot storage for 30 days, cold archive after 90 days"
+  analytics_delay: "View counts accurate within 1-2 hours"
+
+critical_components:
+  - name: "CDN architecture and video delivery"
+    why: "Multi-tier CDN (origin, regional, edge), cache invalidation strategy, origin shield to reduce load, bandwidth cost optimization, handling cache misses"
+  - name: "Adaptive bitrate streaming (ABR)"
+    why: "HLS/DASH manifest generation, bitrate ladder selection (360p-4K), segment packaging, client-side ABR algorithm, handling network fluctuations"
+  - name: "Upload and transcoding pipeline"
+    why: "Chunked resumable uploads, transcoding job queue and parallelization, codec selection (H.264, VP9, AV1), thumbnail extraction, progress tracking"
+  - name: "Storage optimization and tiering"
+    why: "Hot/warm/cold storage tiers, lifecycle policies, deduplication for duplicate uploads, compression strategy, cost per GB optimization"
+
+low_priority_components:
+  - "User authentication and profiles"
+  - "Comment system and moderation"
+  - "Recommendation algorithm (ML pipeline)"
+  - "Content ID and copyright detection"
+  - "Monetization and ad insertion"
+
+failure_scenarios:
+  - scenario: "Viral video gets 50 million views in 1 hour — CDN overwhelmed"
+    focus: "CDN scale-out, origin shielding, cache warming, bandwidth throttling, cost containment"
+  - scenario: "Transcoding cluster fails — 100K uploads stuck in queue"
+    focus: "Job prioritization, auto-scaling workers, fallback to basic quality, user communication"
+  - scenario: "Major CDN region goes down — viewers see buffering"
+    focus: "Multi-CDN failover, DNS-based routing, graceful degradation, regional redundancy"
+  - scenario: "User uploads same 1GB video 1000 times (deduplication failure)"
+    focus: "Content-based deduplication (hash fingerprinting), storage cost explosion, retroactive cleanup"
+  - scenario: "Live stream has 5 million concurrent viewers — origin overload"
+    focus: "Live stream edge replication, WebRTC/HLS for live, latency vs scale tradeoff, cascading CDN"
+
+deep_dive_focus:
+  - component: "CDN caching strategy and cache invalidation"
+    why: "TTL selection by content type, cache key design, origin shield architecture, handling version updates, purge vs expire tradeoffs"
+  - component: "Adaptive bitrate implementation (HLS/DASH)"
+    why: "Segment duration selection (2s vs 10s), bitrate ladder optimization, manifest generation, client-side bandwidth estimation"
+
+scoring_benchmarks:
+  exceptional: "Discusses multi-tier CDN with origin shield and regional POPs, implements HLS/DASH with specific segment duration math and bitrate ladder, designs chunked upload with resumability and S3 multipart API, uses hot/warm/cold storage tiers with lifecycle policies, handles view counting with distributed counters and deduplication, addresses live streaming with WebRTC for ultra-low latency"
+  solid: "Mentions CDN for delivery, basic ABR with multiple bitrates, transcoding service with job queue, storage tiering concept, view counting with eventual consistency, but lacks depth on cache invalidation, segment packaging, or cost optimization"
+  weak: "Treats video as BLOB storage with direct download links, no CDN discussion, single bitrate video, synchronous transcoding on upload, no storage optimization, simple increment for view counts"
