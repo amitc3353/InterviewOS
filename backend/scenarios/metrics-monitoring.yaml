@@ -1,0 +1,88 @@
+id: metrics-monitoring
+name: "Design a Metrics and Monitoring System"
+archetype: "platform-infra"
+description: |
+  Design a distributed metrics and monitoring system like Prometheus, Datadog, or SignalFx.
+  The system should support high-cardinality time-series data ingestion, efficient storage
+  with downsampling, real-time querying and aggregation, flexible alerting with anomaly
+  detection, retention policies, and multi-tenancy. Support for metrics, logs, and traces
+  integration (observability triad) is a plus.
+
+complexity_notes: |
+  At Staff level, this goes beyond basic time-series storage. Push toward:
+  handling high-cardinality dimensions without explosion, write amplification challenges
+  with pre-aggregation vs raw storage, downsampling strategies with statistical accuracy,
+  distributed query federation across time ranges, retention policies with tiered storage,
+  cardinality explosion detection and mitigation, handling late-arriving data points,
+  and balancing query performance vs storage cost.
+
+scope_answers:
+  metrics_per_second: "10 million metric data points ingested per second globally"
+  active_time_series: "500 million active time-series (unique metric + dimension combinations)"
+  cardinality: "What's max cardinality per metric? Typical: 1000-10000 unique tag combinations."
+  query_latency: "What's acceptable query response time? Target p95 < 2s for dashboards, < 100ms for alerting."
+  retention: "How long to retain data? Typical: raw data 7-30 days, downsampled 1 year+."
+  dimensionality: "How many tags/labels per metric? Typical: 10-20 dimensions."
+  aggregation_types: "What aggregations needed? Sum, avg, p50/p95/p99, rate, increase, histograms?"
+  query_complexity: "Simple lookups or complex joins across metrics? Group-by on multiple dimensions?"
+  alerting_latency: "How fast must alerts fire? Target < 1 minute for critical alerts."
+  multi_tenancy: "Shared cluster or isolated per tenant? Noisy neighbor isolation?"
+  downsampling: "What resolution after downsampling? 1min → 5min → 1hour typical cascade."
+
+critical_components:
+  - name: "Time-series data model and storage"
+    why: "Choosing time-series DB (InfluxDB, TimescaleDB, Cassandra, custom), compression algorithms (Gorilla, delta-of-delta), indexing strategy (inverted index for labels), LSM tree vs B-tree tradeoffs"
+  - name: "High-cardinality handling and cardinality limits"
+    why: "Cardinality explosion prevention, per-tenant cardinality quotas, bloom filters for existence checks, dimensionality reduction techniques, detecting and dropping noisy tags"
+  - name: "Write path and ingestion pipeline"
+    why: "Batching and buffering, write amplification with indexing, pre-aggregation vs raw storage, handling out-of-order writes, deduplication, sharding strategy (by metric, by time, by tenant)"
+  - name: "Downsampling and retention policies"
+    why: "Multi-tier retention (raw → 1min → 5min → 1hour), statistical accuracy of downsampled data (avg vs p99), compaction strategies, lazy vs eager downsampling, data lifecycle management"
+  - name: "Query engine and aggregation"
+    why: "Distributed query execution, pushdown predicates to storage layer, in-memory aggregation, handling time-range queries across shards, query parallelization, caching query results"
+  - name: "Alerting and anomaly detection"
+    why: "Rule evaluation frequency, alerting backlog handling, threshold-based vs ML-based anomaly detection, alert deduplication and grouping, notification routing"
+  - name: "Indexing and query performance"
+    why: "Inverted index for label lookups, time-sharded indexes, query optimization (predicate pushdown, partition pruning), hot/cold data tiering, bloom filters for negative lookups"
+
+low_priority_components:
+  - "Visualization and dashboard UI"
+  - "User authentication and authorization"
+  - "Client SDKs and metric instrumentation libraries"
+  - "Cost attribution and chargebacks per tenant"
+  - "Historical data export and backup"
+
+failure_scenarios:
+  - scenario: "High-cardinality metric explodes to 10 million unique time-series — overwhelms storage"
+    focus: "Cardinality limits per metric, bloom filter for new series detection, quota enforcement, dropping noisy dimensions, sampling high-cardinality metrics"
+  - scenario: "Write path can't keep up — 50k metrics/sec backed up causing ingestion lag"
+    focus: "Batching and buffering strategies, horizontal scaling of ingest nodes, backpressure to clients, prioritizing critical metrics, shedding low-priority data"
+  - scenario: "Query for p99 latency over 30 days on high-cardinality metric times out"
+    focus: "Query timeout handling, pre-aggregated rollups, query result caching, partition pruning by time, limiting query complexity, approximate algorithms (t-digest)"
+  - scenario: "Late-arriving data points (5 minutes late) need to be inserted — breaks aggregations"
+    focus: "Out-of-order write handling, grace period for late data, re-aggregation triggers, versioned aggregates, trade-off between accuracy and complexity"
+  - scenario: "Downsampling from 1s to 1min causes p99 to drop to p95 — alert missed"
+    focus: "Statistical accuracy of downsampling, preserving percentiles with histograms (HDR histogram, t-digest), storing min/max/count alongside averages"
+  - scenario: "Alert rule evaluates 1000 time-series every 10 seconds — evaluation lag builds up"
+    focus: "Alert rule optimization, query result caching, incremental evaluation, batching alert checks, prioritizing critical alerts, circuit breaker for expensive rules"
+  - scenario: "One tenant writes 90% of all metrics — noisy neighbor affects others"
+    focus: "Per-tenant rate limiting, resource isolation (CPU, memory, I/O), quota enforcement, separate ingestion queues, tenant prioritization"
+  - scenario: "Storage nodes run out of disk space — oldest data needs emergency deletion"
+    focus: "Retention policy enforcement, tiered storage (SSD → HDD → S3), compaction and cleanup jobs, proactive capacity monitoring, emergency data shedding"
+  - scenario: "Time-series with same labels but different values arrive simultaneously — conflict"
+    focus: "Conflict resolution (last-write-wins, timestamp ordering), deduplication logic, idempotent writes, distributed clock synchronization"
+
+deep_dive_focus:
+  - component: "Time-series compression and storage"
+    why: "Gorilla compression (delta-of-delta + XOR), block-based storage, LSM tree compaction, write amplification analysis, columnar vs row-oriented storage"
+  - component: "High-cardinality mitigation strategies"
+    why: "Cardinality limits and enforcement, bloom filters for series existence, dimensionality reduction, sampling high-cardinality metrics, detecting and dropping noisy tags"
+  - component: "Downsampling with statistical accuracy"
+    why: "Preserving percentiles (HDR histogram, t-digest), multi-resolution storage, lazy vs eager downsampling, compaction triggered vs continuous, handling min/max/count/sum"
+  - component: "Distributed query execution"
+    why: "Query planning and optimization, partition pruning by time and labels, parallel execution across nodes, scatter-gather pattern, query result merging, pushdown predicates"
+
+scoring_benchmarks:
+  exceptional: "Implements time-series compression with Gorilla algorithm (delta-of-delta + XOR) or similar, addresses cardinality explosion with bloom filters and quota enforcement, explains downsampling with statistical accuracy using t-digest or HDR histogram for percentiles, designs distributed query execution with partition pruning and pushdown predicates, handles late-arriving data with grace period and versioned aggregates, implements multi-tier retention (hot SSD → warm HDD → cold S3), discusses write amplification with LSM trees and compaction strategies, addresses noisy neighbor with per-tenant rate limiting and resource isolation"
+  solid: "Mentions time-series database (Prometheus, InfluxDB) for storage, basic downsampling (1min → 1hour), simple retention policies, cardinality limits, distributed querying with time-based sharding, but lacks depth on compression algorithms, high-cardinality mitigation, statistical accuracy of aggregates, or advanced failure scenarios"
+  weak: "Treats it like a simple database storing timestamps and values, no discussion of time-series specific optimizations, cardinality challenges, downsampling strategies, or distributed query execution — just 'store metrics in database, query with SQL'"
