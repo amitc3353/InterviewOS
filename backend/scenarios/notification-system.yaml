@@ -1,0 +1,71 @@
+id: notification-system
+name: "Design a Multi-Channel Notification System"
+archetype: "platform-infra"
+description: |
+  Design a notification system that supports push notifications, email, and SMS
+  with delivery guarantees, rate limiting, and template management. Handle
+  bulk fanout scenarios (e.g., celebrity user notifying millions of followers),
+  provider failures, and multi-tenant rate limits.
+
+complexity_notes: |
+  At Staff level, this is about guarantees and scale. Push toward: exactly-once
+  delivery with idempotency keys, multi-tier fanout architecture (immediate vs batched),
+  multi-dimensional rate limiting (user/channel/provider/tenant), template rendering
+  at scale with caching, circuit breakers for provider failures, dead letter queue
+  handling, and retry storm prevention.
+
+scope_answers:
+  notifications_per_second: "100,000 notifications/sec at peak"
+  total_users: "100 million users across all channels"
+  channels: "Push (FCM/APNS), Email (SendGrid/SES), SMS (Twilio)"
+  delivery_guarantees: "What level? At-least-once, exactly-once, or best-effort?"
+  latency: "What's acceptable per channel? (Push: <5s, Email: <30s, SMS: <10s)"
+  rate_limiting: "Provider limits? User preferences? Compliance rules?"
+  templates: "How many templates? Localization? Personalization depth?"
+  failures: "What happens when provider goes down? Retry strategy?"
+  multi_tenancy: "Multiple tenants with isolated rate limits and failure domains?"
+  priorities: "Time-sensitive (OTP, alerts) vs marketing notifications?"
+
+critical_components:
+  - name: "Notification router and fanout engine"
+    why: "Channel selection logic, bulk fanout patterns for 1-to-N scenarios, write amplification handling, push vs pull queue design"
+  - name: "Delivery guarantee mechanism"
+    why: "Idempotency keys for exactly-once, deduplication windows, state machine for tracking delivery status, retry logic"
+  - name: "Multi-dimensional rate limiting service"
+    why: "Token bucket per user/channel/provider, distributed coordination, burst handling, compliance with quiet hours"
+  - name: "Template management and rendering system"
+    why: "Template storage and versioning, rendering engine with variable substitution, localization, caching strategy, fallback templates"
+
+low_priority_components:
+  - "Admin dashboard UI for template editing"
+  - "Analytics and reporting dashboard"
+  - "A/B testing framework for notification content"
+  - "User preference management portal"
+  - "Notification history viewer"
+
+failure_scenarios:
+  - scenario: "SendGrid goes down mid-batch while sending 1M promotional emails"
+    focus: "Failover to SES, retry logic, dead letter queue for failed sends, progress tracking"
+  - scenario: "SMS provider rate limits exceeded during time-sensitive OTP notifications"
+    focus: "Priority queuing for OTP vs marketing, circuit breakers, backoff strategies, alternate provider failover"
+  - scenario: "Template rendering fails for 10% of users due to missing personalization data"
+    focus: "Fallback to default template, error handling, data validation, partial success handling"
+  - scenario: "Celebrity user triggers notification to 10M followers causing write amplification"
+    focus: "Fanout queue backpressure, batching strategies, throttling, preventing queue saturation"
+  - scenario: "Duplicate notifications sent due to retry after timeout"
+    focus: "Idempotency key implementation, deduplication window sizing, state persistence"
+  - scenario: "Email provider returns success but doesn't deliver for 6 hours"
+    focus: "Webhook handling for delayed failures, reconciliation, dead letter queue reprocessing"
+
+deep_dive_focus:
+  - component: "Exactly-once delivery guarantee implementation"
+    why: "Idempotency key design, distributed state machine, deduplication windows, retry with jitter, critical for Staff-level understanding"
+  - component: "Fanout architecture for 1-to-N notifications"
+    why: "Push vs pull model, queue partitioning, batch processing, backpressure handling, write amplification mitigation"
+  - component: "Multi-dimensional rate limiting"
+    why: "Provider API limits, user quiet hours, tenant quotas, compliance rules, distributed token bucket coordination"
+
+scoring_benchmarks:
+  exceptional: "Implements exactly-once delivery with idempotency keys and state tracking, designs multi-tier fanout (immediate push for urgent, batched pull for bulk), addresses provider rate limits with circuit breakers and automatic failover to secondary providers, discusses template caching with Redis and rendering optimization, handles dead letter queues with manual intervention workflows, prevents retry storms with exponential backoff and jitter"
+  solid: "Mentions message queues (Kafka/SQS) for async delivery, basic retry logic with exponential backoff, rate limiting per provider API limits, template storage in database, but lacks depth on exactly-once semantics, fanout optimization for write amplification, and multi-dimensional rate limiting"
+  weak: "Treats it like direct synchronous API calls to notification providers (SendGrid, Twilio, FCM) with basic retry, no discussion of delivery guarantees, fanout patterns for bulk scenarios, or sophisticated rate limiting beyond simple throttling"
