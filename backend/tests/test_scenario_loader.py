@@ -42,7 +42,7 @@ def test_empty_directory(tmp_path):
 def test_list_available():
     loader = ScenarioLoader()
     scenarios = loader.list_available()
-    assert len(scenarios) == 13
+    assert len(scenarios) == 14
     assert all("id" in s and "name" in s and "archetype" in s for s in scenarios)
     ids = [s["id"] for s in scenarios]
     assert "url-shortener" in ids
