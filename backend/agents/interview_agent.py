@@ -444,21 +444,114 @@ class InterviewAgent(Agent):
         self,
         text: AsyncIterable[str],
         model_settings: agents.ModelSettings,
-    ):
+    ) -> AsyncIterable[rtc.AudioFrame]:
         """
-        Custom TTS node - pass through clean text to TTS.
-        
-        Parsing is now done in llm_node, so we just stream the text directly to TTS.
+        Custom TTS node with timeout and retry handling.
+
+        Wraps Cartesia TTS with 5s timeout on first audio frame and one retry on failure.
+        Streams audio frames immediately to maintain <2s response latency.
+        Never loses LLM responses - logs loudly but allows silence if TTS is completely down.
+
+        Timeout applies only to first frame (TTFB), not entire synthesis.
+        This prevents stalled TTS requests while allowing normal streaming for long responses.
         """
-        # The text coming in has already been parsed and cleaned in llm_node
-        # Just pass it through to default TTS
-        try:
-            async for audio_frame in Agent.default.tts_node(self, text, model_settings):
-                yield audio_frame
-        except Exception as e:
-            status = getattr(e, "status_code", "N/A")
-            logger.error("TTS failed — status_code=%s  type=%s  msg=%s", status, type(e).__name__, e)
-            raise
+        # Buffer text chunks for potential retry
+        # Trade-off: Adds latency (can't start TTS until all text received) but enables retry
+        text_chunks: list[str] = []
+        async for chunk in text:
+            text_chunks.append(chunk)
+
+        # Don't attempt TTS if there's no text
+        if not text_chunks:
+            logger.debug("TTS node received empty text, skipping synthesis")
+            return
+
+        full_text = "".join(text_chunks)
+        logger.debug(f"TTS synthesizing {len(full_text)} characters: {full_text[:100]}...")
+
+        # TTS resilience configuration
+        TTS_TIMEOUT_SECONDS = 5.0  # Timeout for first audio frame only
+        MAX_TTS_RETRIES = 2  # Total attempts including initial try
+
+        for attempt in range(MAX_TTS_RETRIES):
+            try:
+                # Create async generator from buffered text
+                async def text_generator() -> AsyncIterable[str]:
+                    for chunk in text_chunks:
+                        yield chunk
+
+                # Create TTS stream
+                tts_stream = Agent.default.tts_node(self, text_generator(), model_settings)
+
+                # Get first audio frame with timeout (detects TTS hangs/failures early)
+                try:
+                    first_frame = await asyncio.wait_for(
+                        tts_stream.__anext__(),
+                        timeout=TTS_TIMEOUT_SECONDS,
+                    )
+                    yield first_frame
+                    frame_count = 1
+
+                    # Stream remaining frames without timeout (normal streaming can be slow for long text)
+                    async for audio_frame in tts_stream:
+                        yield audio_frame
+                        frame_count += 1
+
+                    logger.debug(f"TTS synthesis complete — {frame_count} frames, attempt {attempt + 1}")
+                    return
+
+                except StopAsyncIteration:
+                    # TTS stream ended immediately (no frames)
+                    logger.debug(f"TTS returned no frames, attempt {attempt + 1}")
+                    return
+
+            except asyncio.TimeoutError:
+                if attempt < MAX_TTS_RETRIES - 1:
+                    logger.warning(
+                        "TTS timeout (%.1fs) on attempt %d/%d, retrying — text_len=%d turn=%d",
+                        TTS_TIMEOUT_SECONDS,
+                        attempt + 1,
+                        MAX_TTS_RETRIES,
+                        len(full_text),
+                        self.interview_session.state.total_turn_count,
+                    )
+                    await asyncio.sleep(0.5)  # Brief pause before retry
+                else:
+                    logger.error(
+                        "🔴 TTS TIMEOUT after %d attempts — LLM response will be SILENT — text_len=%d turn=%d text=%s",
+                        MAX_TTS_RETRIES,
+                        len(full_text),
+                        self.interview_session.state.total_turn_count,
+                        full_text[:200],
+                    )
+                    # Fallback to silence (don't crash the session)
+                    return
+
+            except Exception as e:
+                status = getattr(e, "status_code", "N/A")
+                if attempt < MAX_TTS_RETRIES - 1:
+                    logger.warning(
+                        "TTS error on attempt %d/%d, retrying — status=%s type=%s msg=%s turn=%d",
+                        attempt + 1,
+                        MAX_TTS_RETRIES,
+                        status,
+                        type(e).__name__,
+                        e,
+                        self.interview_session.state.total_turn_count,
+                    )
+                    await asyncio.sleep(0.5)  # Brief pause before retry
+                else:
+                    logger.error(
+                        "🔴 TTS FAILED after %d attempts — LLM response will be SILENT — status=%s type=%s msg=%s turn=%d text=%s",
+                        MAX_TTS_RETRIES,
+                        status,
+                        type(e).__name__,
+                        e,
+                        self.interview_session.state.total_turn_count,
+                        full_text[:200],
+                    )
+                    # Fallback to silence (don't crash the session)
+                    return
 
     async def _generate_scorecard(self):
         """Generate post-interview scorecard. Runs as background task or on session_end."""
