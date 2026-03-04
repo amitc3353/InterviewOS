@@ -425,8 +425,99 @@ class InterviewAgent(Agent):
         first_ms = ((first_spoken_time or turn_start) - turn_start) * 1000
         logger.info(f"⚡ Turn complete in {total_ms:.0f}ms (first speech: {first_ms:.0f}ms)")
 
+        # --- Check for empty spoken text and retry if needed ---
+        full_spoken = parser.get_spoken_text()
+        retry_occurred = False
+        retry_parser = None
+
+        if not full_spoken or not full_spoken.strip():
+            logger.warning(
+                "Empty LLM response detected (no spoken text) — retrying with fallback prompt — turn=%d phase=%s",
+                self.interview_session.state.total_turn_count,
+                self.interview_session.state.phase.value,
+            )
+
+            # Retry LLM call ONCE with fallback prompt
+            fallback_prompt = "You must provide a spoken response to the candidate. Please respond now."
+            chat_ctx.add_message(role="system", content=fallback_prompt)
+
+            retry_parser = StreamingResponseParser()
+            retry_chunks: list[llm.ChatChunk] = []
+
+            try:
+                # Retry with 5s timeout
+                llm_retry_stream = Agent.default.llm_node(self, chat_ctx, tools, model_settings)
+                llm_retry_with_timeout = _stream_with_first_chunk_timeout(
+                    llm_retry_stream, timeout=5.0
+                )
+
+                async for chunk in llm_retry_with_timeout:
+                    if chunk.delta and chunk.delta.content:
+                        spoken_fragment = retry_parser.feed(chunk.delta.content)
+                        if spoken_fragment:
+                            spoken_fragment = _normalize_for_tts(spoken_fragment)
+                        if spoken_fragment:
+                            spoken_chunk = llm.ChatChunk(
+                                id=chunk.id or last_chunk_id,
+                                delta=llm.ChoiceDelta(role="assistant", content=spoken_fragment),
+                            )
+                            retry_chunks.append(spoken_chunk)
+                    else:
+                        retry_chunks.append(chunk)
+
+                # Flush retry parser
+                final_retry_fragment = retry_parser.flush()
+                if final_retry_fragment:
+                    retry_chunks.append(llm.ChatChunk(
+                        id=last_chunk_id,
+                        delta=llm.ChoiceDelta(role="assistant", content=final_retry_fragment),
+                    ))
+
+                # Yield retry chunks to TTS
+                for retry_chunk in retry_chunks:
+                    yield retry_chunk
+
+                # Get spoken text from retry
+                retry_spoken = retry_parser.get_spoken_text()
+                if retry_spoken and retry_spoken.strip():
+                    full_spoken = retry_spoken
+                    retry_occurred = True
+                    logger.info("Retry successful — received spoken text: %s", retry_spoken[:60])
+                else:
+                    # Retry still empty — use hardcoded fallback
+                    logger.error(
+                        "Retry failed (still empty) — using hardcoded fallback — turn=%d phase=%s",
+                        self.interview_session.state.total_turn_count,
+                        self.interview_session.state.phase.value,
+                    )
+                    fallback_text = "Could you elaborate on that?"
+                    fallback_chunk = llm.ChatChunk(
+                        id=last_chunk_id,
+                        delta=llm.ChoiceDelta(role="assistant", content=fallback_text),
+                    )
+                    yield fallback_chunk
+                    full_spoken = fallback_text
+
+            except (asyncio.TimeoutError, Exception) as e:
+                # Retry failed — use hardcoded fallback
+                logger.error(
+                    "Retry failed with error (%s) — using hardcoded fallback — turn=%d phase=%s",
+                    e,
+                    self.interview_session.state.total_turn_count,
+                    self.interview_session.state.phase.value,
+                )
+                fallback_text = "Could you elaborate on that?"
+                fallback_chunk = llm.ChatChunk(
+                    id=last_chunk_id,
+                    delta=llm.ChoiceDelta(role="assistant", content=fallback_text),
+                )
+                yield fallback_chunk
+                full_spoken = fallback_text
+
         # --- Update state after stream (safe — doesn't affect current turn's audio) ---
-        new_phase, updated_constraints = parser.get_state_updates()
+        # Use retry parser's state updates if retry was successful, otherwise use original parser
+        active_parser = retry_parser if retry_occurred and retry_parser else parser
+        new_phase, updated_constraints = active_parser.get_state_updates()
 
         if updated_constraints:
             for key, value in updated_constraints.items():
@@ -453,7 +544,6 @@ class InterviewAgent(Agent):
                 logger.warning(f"Invalid phase in response: {new_phase}")
 
         # --- Record full turn in history ---
-        full_spoken = parser.get_spoken_text()
         if full_spoken:
             self.interview_session.state.add_message("assistant", full_spoken)
             logger.debug(f"Recorded assistant turn: {full_spoken[:100]}...")
