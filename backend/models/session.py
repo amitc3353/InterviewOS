@@ -1,12 +1,12 @@
 """Interview session data models."""
 
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
+from backend.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class InterviewPhase(Enum):

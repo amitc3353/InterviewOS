@@ -833,27 +833,76 @@ class InterviewAgent(Agent):
     async def _generate_scorecard(self):
         """Generate post-interview scorecard. Runs as background task or on session_end."""
         try:
-            logger.info("Generating interview scorecard...")
+            await logger.info_async(
+                "Generating interview scorecard",
+                event_type="scorecard_generation_start",
+                turn_number=self.interview_session.state.total_turn_count,
+                phase=self.interview_session.state.phase.value,
+            )
             scorecard = await self._scoring_engine.score_interview(
                 self.interview_session, self.config
             )
             self.interview_session.scorecard = scorecard.to_dict()
             saved_path = await self._scoring_engine.save_scorecard(scorecard)
-            logger.info(f"Scorecard saved: {saved_path}")
-            self._log_scorecard(scorecard)
+            await logger.info_async(
+                f"Scorecard saved: {saved_path}",
+                event_type="scorecard_saved",
+                turn_number=self.interview_session.state.total_turn_count,
+                phase=self.interview_session.state.phase.value,
+                file_path=saved_path,
+                hire_signal=scorecard.hire_signal,
+                overall_score=scorecard.overall_score,
+            )
+            await self._log_scorecard(scorecard)
         except Exception as e:
-            logger.error(f"Scorecard generation failed: {e}", exc_info=True)
+            await logger.error_async(
+                f"Scorecard generation failed: {e}",
+                event_type="scorecard_generation_error",
+                turn_number=self.interview_session.state.total_turn_count,
+                phase=self.interview_session.state.phase.value,
+                exc_info=True,
+            )
 
-    def _log_scorecard(self, scorecard: InterviewScorecard):
+    async def _log_scorecard(self, scorecard: InterviewScorecard):
         """Log human-readable scorecard for immediate visibility during testing."""
-        logger.info("=" * 60)
-        logger.info(f"INTERVIEW SCORECARD — {scorecard.hire_signal} ({scorecard.overall_score:.1f}/5)")
-        logger.info(f"Scenario: {scorecard.scenario}")
+        await logger.info_async(
+            "=" * 60,
+            event_type="scorecard_display",
+        )
+        await logger.info_async(
+            f"INTERVIEW SCORECARD — {scorecard.hire_signal} ({scorecard.overall_score:.1f}/5)",
+            event_type="scorecard_summary",
+            hire_signal=scorecard.hire_signal,
+            overall_score=scorecard.overall_score,
+        )
+        await logger.info_async(
+            f"Scenario: {scorecard.scenario}",
+            event_type="scorecard_scenario",
+            scenario=scorecard.scenario,
+        )
         for dim_key, dim in scorecard.dimensions.items():
-            logger.info(f"  {dim_key}: {dim.score}/5 ({dim.label})")
-            logger.info(f"    {dim.rationale}")
-        logger.info(f"Narrative: {scorecard.narrative}")
-        logger.info("=" * 60)
+            await logger.info_async(
+                f"  {dim_key}: {dim.score}/5 ({dim.label})",
+                event_type="scorecard_dimension",
+                dimension=dim_key,
+                score=dim.score,
+                label=dim.label,
+            )
+            await logger.info_async(
+                f"    {dim.rationale}",
+                event_type="scorecard_dimension_rationale",
+                dimension=dim_key,
+                rationale=dim.rationale,
+            )
+        await logger.info_async(
+            f"Narrative: {scorecard.narrative}",
+            event_type="scorecard_narrative",
+            narrative=scorecard.narrative,
+        )
+        await logger.info_async(
+            "=" * 60,
+            event_type="scorecard_display",
+        )
 
 
 def prewarm(proc: agents.JobProcess) -> None:
@@ -865,13 +914,22 @@ def prewarm(proc: agents.JobProcess) -> None:
 
     if config.use_semantic_turn_detection:
         try:
-            logger.info("Loading semantic turn detector model...")
+            logger.info(
+                "Loading semantic turn detector model",
+                event_type="turn_detector_loading"
+            )
             eou = turn_detector.english.EnglishModel()
             proc.userdata["turn_detector"] = eou
-            logger.info("Semantic turn detector loaded")
+            logger.info(
+                "Semantic turn detector loaded",
+                event_type="turn_detector_loaded"
+            )
         except Exception as e:
             logger.warning(
-                "Turn detector failed to load (%s); sessions will use Silero VAD only", e
+                f"Turn detector failed to load ({e}); sessions will use Silero VAD only",
+                event_type="turn_detector_load_failed",
+                error_type=type(e).__name__,
+                error_message=str(e)
             )
 
 

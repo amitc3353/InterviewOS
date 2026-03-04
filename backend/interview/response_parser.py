@@ -1,11 +1,11 @@
 """Parses LLM responses and extracts spoken text + state updates."""
 
 import json
-import logging
 import re
 from typing import Dict, List, Optional, Tuple
+from backend.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Tags that are spoken aloud (sent to TTS)
 _SPOKEN_TAGS = {"ACK", "Q", "SUMMARY", "CONTEXT"}
@@ -62,7 +62,10 @@ class StreamingResponseParser:
             stripped = self._json_buffer.lstrip()
             if stripped and stripped[0] == '{':
                 self._is_json_mode = True
-                logger.info("Detected JSON response — activating JSON fallback parser")
+                logger.info(
+                    "Detected JSON response — activating JSON fallback parser",
+                    event_type="parse_json_detected"
+                )
                 return None
 
         if self._is_json_mode:
@@ -126,6 +129,11 @@ class StreamingResponseParser:
         Returns any final spoken text not yet yielded, or None.
         """
         if self._is_json_mode:
+            logger.debug(
+                "Parsing JSON response in flush()",
+                event_type="parse_json_attempt",
+                buffer_length=len(self._json_buffer)
+            )
             spoken, phase, constraints = self._json_parser.parse(self._json_buffer)
             self._phase = phase
             if constraints:
@@ -133,6 +141,13 @@ class StreamingResponseParser:
                     self._locks.append(f"{key}={value}")
             if spoken and spoken not in self._spoken_parts:
                 self._spoken_parts.append(spoken)
+            logger.debug(
+                "JSON parsing complete",
+                event_type="parse_json_success",
+                has_spoken=bool(spoken),
+                has_phase=bool(phase),
+                constraints_count=len(constraints) if constraints else 0
+            )
             return spoken or None
 
         # Tag mode: anything left in buffer after all tags were processed
@@ -143,14 +158,20 @@ class StreamingResponseParser:
                 # LLM returned a response with no tag formatting at all.
                 # Speak it verbatim rather than silencing the interview.
                 logger.warning(
-                    f"No-tag response — using as spoken fallback: {remaining[:60]!r}"
+                    f"No-tag response — using as spoken fallback: {remaining[:60]!r}",
+                    event_type="parse_no_tags_fallback",
+                    text_preview=remaining[:60]
                 )
                 self._spoken_parts.append(remaining)
                 self.buffer = ""
                 return remaining
             else:
                 # Trailing text after the last tag — discard safely.
-                logger.warning(f"Discarding stray text outside tags: {remaining[:60]!r}")
+                logger.warning(
+                    f"Discarding stray text outside tags: {remaining[:60]!r}",
+                    event_type="parse_stray_text",
+                    text_preview=remaining[:60]
+                )
         self.buffer = ""
         return None
 
@@ -185,9 +206,21 @@ class _JsonResponseParser:
             phase = parsed.get("phase")
             spoken_text = self._build_spoken_text(parsed)
             updated_constraints = parsed.get("update_locked_constraints")
+            logger.debug(
+                "JSON parse succeeded",
+                event_type="parse_json_success",
+                has_phase=bool(phase),
+                has_spoken=bool(spoken_text),
+                has_constraints=bool(updated_constraints)
+            )
             return spoken_text, phase, updated_constraints
         except json.JSONDecodeError as e:
-            logger.warning(f"JSON parse failed: {e}. Trying fallback.")
+            logger.warning(
+                f"JSON parse failed: {e}. Trying fallback.",
+                event_type="parse_json_failed",
+                error=str(e),
+                response_preview=raw_response[:100]
+            )
             return self._fallback_parse(raw_response)
 
     def _build_spoken_text(self, parsed: Dict) -> str:
@@ -206,18 +239,37 @@ class _JsonResponseParser:
     def _fallback_parse(self, raw_response: str) -> Tuple[str, None, None]:
         # Try markdown code block
         if "```json" in raw_response:
+            logger.debug(
+                "Attempting markdown code block fallback",
+                event_type="parse_fallback_markdown"
+            )
             try:
                 start = raw_response.index("```json") + 7
                 end = raw_response.index("```", start)
                 parsed = json.loads(raw_response[start:end].strip())
+                logger.info(
+                    "Markdown code block fallback succeeded",
+                    event_type="parse_fallback_success",
+                    fallback_method="markdown"
+                )
                 return (
                     self._build_spoken_text(parsed),
                     parsed.get("phase"),
                     parsed.get("update_locked_constraints"),
                 )
-            except (ValueError, json.JSONDecodeError):
+            except (ValueError, json.JSONDecodeError) as e:
+                logger.debug(
+                    f"Markdown code block fallback failed: {e}",
+                    event_type="parse_fallback_failed",
+                    fallback_method="markdown",
+                    error=str(e)
+                )
                 pass
         # Regex extraction
+        logger.debug(
+            "Attempting regex extraction fallback",
+            event_type="parse_fallback_regex"
+        )
         q_match = re.search(r'"question"\s*:\s*"([^"]*)"', raw_response)
         says_match = re.search(r'"interviewer_says"\s*:\s*"([^"]*)"', raw_response)
         phase_match = re.search(r'"phase"\s*:\s*"([^"]+)"', raw_response)
@@ -227,4 +279,12 @@ class _JsonResponseParser:
         if q_match and q_match.group(1):
             parts.append(q_match.group(1))
         spoken = " ".join(parts) if parts else raw_response.strip()[:200]
+        logger.info(
+            "Regex extraction fallback completed",
+            event_type="parse_fallback_success",
+            fallback_method="regex",
+            has_question=bool(q_match),
+            has_interviewer_says=bool(says_match),
+            has_phase=bool(phase_match)
+        )
         return spoken, phase_match.group(1) if phase_match else None, None
