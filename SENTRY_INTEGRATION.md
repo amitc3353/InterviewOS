@@ -185,7 +185,20 @@ INFO - Sentry DSN not configured, skipping error tracking
 ## Next Steps
 
 - Monitor your GlitchTip/Sentry dashboard for errors
-- Set up alerts for critical errors
+- **[Set up alerts for critical errors](./GLITCHTIP_ALERTS.md)** ← See comprehensive alerting guide
 - Use session_id tag to filter errors by session
 - Use phase tag to identify which interview phase has most errors
 - Configure issue assignment and notification rules
+
+## GlitchTip Alerting
+
+For detailed instructions on setting up GlitchTip alert rules with Discord webhook integration, see:
+
+**[GLITCHTIP_ALERTS.md](./GLITCHTIP_ALERTS.md)**
+
+This guide covers:
+- Creating Discord webhooks for alerts
+- Configuring GlitchTip alert rules with error rate thresholds
+- Setting up webhook proxy for formatted Discord notifications
+- Testing webhook delivery
+- Troubleshooting common issues
