@@ -147,24 +147,44 @@ class InterviewAgent(Agent):
                     self.interview_session.state.add_message("user", user_text)
                     logger.debug(f"Recorded user message: {user_text[:100]}...")
 
-        # --- STT failure recovery: Generate fallback response for empty/timeout ---
-        # If STT timeout or empty response, skip LLM and send recovery message directly
+        # --- Consecutive silence tracking and recovery ---
+        # Track empty/silent user turns and inject recovery question after 3 consecutive silences
         if not user_text or not user_text.strip():
+            self.interview_session.state.consecutive_silence_count += 1
             logger.warning(
-                "Empty STT response detected — turn=%d phase=%s",
+                "Empty STT response detected — consecutive_silence=%d turn=%d phase=%s",
+                self.interview_session.state.consecutive_silence_count,
                 self.interview_session.state.total_turn_count,
                 self.interview_session.state.phase.value,
             )
-            recovery_text = "Sorry, I didn't catch that. Can you repeat?"
-            recovery_chunk = llm.ChatChunk(
-                id="stt_recovery",
-                delta=llm.ChoiceDelta(role="assistant", content=recovery_text),
+
+            # If < 3 consecutive silences, send simple recovery and skip LLM
+            if self.interview_session.state.consecutive_silence_count < 3:
+                recovery_text = "Sorry, I didn't catch that. Can you repeat?"
+                recovery_chunk = llm.ChatChunk(
+                    id="stt_recovery",
+                    delta=llm.ChoiceDelta(role="assistant", content=recovery_text),
+                )
+                yield recovery_chunk
+                # Record recovery message in history
+                self.interview_session.state.add_message("assistant", recovery_text)
+                logger.info("STT recovery message sent: %s", recovery_text)
+                return  # Skip LLM processing for this turn
+
+            # If >= 3 consecutive silences, continue to LLM with recovery injection
+            # The recovery context will be added to dynamic_context below
+            logger.info(
+                "Consecutive silence limit reached (%d) — injecting recovery question",
+                self.interview_session.state.consecutive_silence_count,
             )
-            yield recovery_chunk
-            # Record recovery message in history
-            self.interview_session.state.add_message("assistant", recovery_text)
-            logger.info("STT recovery message sent: %s", recovery_text)
-            return  # Skip LLM processing for this turn
+        else:
+            # User provided substantive input — reset silence counter
+            if self.interview_session.state.consecutive_silence_count > 0:
+                logger.info(
+                    "Resetting consecutive_silence_count from %d to 0 after substantive input",
+                    self.interview_session.state.consecutive_silence_count,
+                )
+                self.interview_session.state.consecutive_silence_count = 0
 
         # --- KV-cache split prompts: static (cached) + dynamic (per-turn) ---
         # First turn: Set static system prompt (gets KV-cached by LLM)
@@ -174,6 +194,14 @@ class InterviewAgent(Agent):
 
         # Every turn: Build dynamic context
         dynamic_context = self.phase_manager.get_dynamic_context(self.interview_session.state)
+
+        # Add consecutive silence recovery context if needed
+        if self.interview_session.state.consecutive_silence_count >= 3:
+            dynamic_context += (
+                "\n\n**RECOVERY**: The candidate seems stuck or silent. "
+                "Ask a clarifying question to help them continue. "
+                "Provide a gentle prompt or ask if they need more context about the problem."
+            )
 
         # Add interruption recovery context if needed
         current_phase = self.interview_session.state.phase
@@ -431,6 +459,16 @@ class InterviewAgent(Agent):
             logger.debug(f"Recorded assistant turn: {full_spoken[:100]}...")
         else:
             logger.warning("Parser returned empty spoken text — skipping history record")
+
+        # --- Reset consecutive silence counter after recovery question is delivered ---
+        # If we injected a recovery question and LLM generated a response, reset the counter
+        # so the next turn starts fresh without recovery injection
+        if self.interview_session.state.consecutive_silence_count >= 3:
+            logger.info(
+                "Recovery question delivered — resetting consecutive_silence_count from %d to 0",
+                self.interview_session.state.consecutive_silence_count,
+            )
+            self.interview_session.state.consecutive_silence_count = 0
 
         # --- Terminate session after 2 WRAP turns (closing question + closing ACK) ---
         if (self.interview_session.state.phase == InterviewPhase.WRAP
