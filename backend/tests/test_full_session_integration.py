@@ -1,6 +1,7 @@
 """Full 45-minute interview session integration test — simulates complete interview with time-fast-forwarding."""
 
 import asyncio
+import json
 import pytest
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -60,11 +61,11 @@ class MockTime:
     def __init__(self):
         self.current_time = datetime(2024, 3, 15, 10, 0, 0)  # Fixed start time
 
-    def advance(self, seconds: float):
+    def advance(self, seconds: float) -> None:
         """Advance time by N seconds."""
         self.current_time += timedelta(seconds=seconds)
 
-    def now(self):
+    def now(self) -> datetime:
         """Return current mocked time."""
         return self.current_time
 
@@ -174,7 +175,7 @@ async def test_full_45_min_session_simulation():
         assert len(agent.interview_session.state.locked_constraints) == initial_constraints_count
 
         # Advance time past SCOPE budget (10 min = 600s) to trigger auto-advance
-        mock_time.advance(600 - 240)  # Already advanced 240s, need 360s more
+        mock_time.advance(600 - 240 + 1)  # Already advanced 240s, need to exceed budget
 
         # Simulate a turn that triggers time budget check
         chat_ctx = _make_chat_ctx_with_message("Let me design the architecture now.")
@@ -209,7 +210,7 @@ async def test_full_45_min_session_simulation():
         assert len(agent.interview_session.state.locked_constraints) > initial_constraints_count
 
         # Advance time past ARCHITECTURE budget (15 min = 900s)
-        mock_time.advance(900 - 180)
+        mock_time.advance(900 - 180 + 1)  # Already advanced 180s, need to exceed budget
 
         # Trigger auto-advance
         agent.phase_manager.get_dynamic_context(agent.interview_session.state)
@@ -272,7 +273,7 @@ async def test_full_45_min_session_simulation():
             async for chunk in agent.llm_node(chat_ctx, [], Mock()):
                 chunks.append(chunk)
 
-        mock_time.advance(600 - 30)  # Fill rest of DEEP_DIVE budget
+        mock_time.advance(600 - 30 + 1)  # Fill rest of DEEP_DIVE budget and exceed it
 
         # Trigger auto-advance to FAILURE
         agent.phase_manager.get_dynamic_context(agent.interview_session.state)
@@ -290,7 +291,7 @@ async def test_full_45_min_session_simulation():
             async for chunk in agent.llm_node(chat_ctx, [], Mock()):
                 chunks.append(chunk)
 
-        mock_time.advance(600)  # Full FAILURE budget
+        mock_time.advance(601)  # Full FAILURE budget and exceed it
 
         # Trigger auto-advance to TRADEOFFS
         agent.phase_manager.get_dynamic_context(agent.interview_session.state)
@@ -308,7 +309,7 @@ async def test_full_45_min_session_simulation():
             async for chunk in agent.llm_node(chat_ctx, [], Mock()):
                 chunks.append(chunk)
 
-        mock_time.advance(300)  # Full TRADEOFFS budget
+        mock_time.advance(301)  # Full TRADEOFFS budget and exceed it
 
         # Trigger auto-advance to WRAP
         agent.phase_manager.get_dynamic_context(agent.interview_session.state)
@@ -350,7 +351,7 @@ async def test_full_45_min_session_simulation():
         async def mock_anthropic_create(**kwargs):
             mock_response = Mock()
             mock_response.content = [Mock()]
-            mock_response.content[0].text = str(mock_scoring_response).replace("'", '"')
+            mock_response.content[0].text = json.dumps(mock_scoring_response)
             return mock_response
 
         with patch("anthropic.AsyncAnthropic") as mock_anthropic_class:
