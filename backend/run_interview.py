@@ -29,14 +29,17 @@ def main():
     """Main entry point."""
     # Load configuration
     config = AgentConfig.from_env()
-    
+
     # Validate configuration
     if not config.validate():
         logger.error("Invalid configuration. Please check your .env file.")
         logger.error("Required: LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, "
                     "DEEPGRAM_API_KEY, ANTHROPIC_API_KEY, CARTESIA_API_KEY")
         sys.exit(1)
-    
+
+    # Initialize Sentry error tracking
+    config.init_sentry()
+
     logger.info("=" * 80)
     logger.info(f"Starting InterviewOS Agent")
     logger.info(f"LiveKit URL: {config.livekit_url}")
