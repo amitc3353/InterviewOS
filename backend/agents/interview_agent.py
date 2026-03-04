@@ -444,14 +444,19 @@ class InterviewAgent(Agent):
         self,
         text: AsyncIterable[str],
         model_settings: agents.ModelSettings,
-    ):
+    ) -> AsyncIterable[rtc.AudioFrame]:
         """
         Custom TTS node with timeout and retry handling.
 
-        Wraps Cartesia TTS with 5s timeout and one retry on failure.
+        Wraps Cartesia TTS with 5s timeout on first audio frame and one retry on failure.
+        Streams audio frames immediately to maintain <2s response latency.
         Never loses LLM responses - logs loudly but allows silence if TTS is completely down.
+
+        Timeout applies only to first frame (TTFB), not entire synthesis.
+        This prevents stalled TTS requests while allowing normal streaming for long responses.
         """
         # Buffer text chunks for potential retry
+        # Trade-off: Adds latency (can't start TTS until all text received) but enables retry
         text_chunks: list[str] = []
         async for chunk in text:
             text_chunks.append(chunk)
@@ -464,46 +469,46 @@ class InterviewAgent(Agent):
         full_text = "".join(text_chunks)
         logger.debug(f"TTS synthesizing {len(full_text)} characters: {full_text[:100]}...")
 
-        # TTS resilience: timeout + retry
-        TTS_TIMEOUT_SECONDS = 5.0
+        # TTS resilience configuration
+        TTS_TIMEOUT_SECONDS = 5.0  # Timeout for first audio frame only
         MAX_TTS_RETRIES = 2  # Total attempts including initial try
 
         for attempt in range(MAX_TTS_RETRIES):
             try:
                 # Create async generator from buffered text
-                async def text_generator():
+                async def text_generator() -> AsyncIterable[str]:
                     for chunk in text_chunks:
                         yield chunk
 
-                # Helper to consume TTS stream with timeout per frame
-                async def consume_tts_stream():
-                    """Consume TTS audio frames with timeout on each frame."""
-                    tts_stream = Agent.default.tts_node(self, text_generator(), model_settings)
-                    frames = []
+                # Create TTS stream
+                tts_stream = Agent.default.tts_node(self, text_generator(), model_settings)
+
+                # Get first audio frame with timeout (detects TTS hangs/failures early)
+                try:
+                    first_frame = await asyncio.wait_for(
+                        tts_stream.__anext__(),
+                        timeout=TTS_TIMEOUT_SECONDS,
+                    )
+                    yield first_frame
+                    frame_count = 1
+
+                    # Stream remaining frames without timeout (normal streaming can be slow for long text)
                     async for audio_frame in tts_stream:
-                        # Each frame should arrive quickly
-                        # If TTS hangs, this iteration will stall
-                        frames.append(audio_frame)
-                    return frames
+                        yield audio_frame
+                        frame_count += 1
 
-                # Apply timeout to entire TTS operation
-                audio_frames = await asyncio.wait_for(
-                    consume_tts_stream(),
-                    timeout=TTS_TIMEOUT_SECONDS,
-                )
+                    logger.debug(f"TTS synthesis complete — {frame_count} frames, attempt {attempt + 1}")
+                    return
 
-                # Success - yield all frames
-                frame_count = len(audio_frames)
-                for frame in audio_frames:
-                    yield frame
-
-                logger.debug(f"TTS synthesis complete — {frame_count} frames, attempt {attempt + 1}")
-                return
+                except StopAsyncIteration:
+                    # TTS stream ended immediately (no frames)
+                    logger.debug(f"TTS returned no frames, attempt {attempt + 1}")
+                    return
 
             except asyncio.TimeoutError:
                 if attempt < MAX_TTS_RETRIES - 1:
                     logger.warning(
-                        "TTS timeout (%ds) on attempt %d/%d, retrying — text_len=%d turn=%d",
+                        "TTS timeout (%.1fs) on attempt %d/%d, retrying — text_len=%d turn=%d",
                         TTS_TIMEOUT_SECONDS,
                         attempt + 1,
                         MAX_TTS_RETRIES,

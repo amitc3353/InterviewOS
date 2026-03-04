@@ -33,13 +33,14 @@ async def _async_text_generator(chunks: list[str]):
 
 
 async def _async_audio_generator(frame_count: int):
-    """Helper to create async audio frame generator."""
+    """Helper to create async audio frame generator that yields immediately."""
     for i in range(frame_count):
         yield Mock(data=f"audio_frame_{i}")
 
 
 async def _async_audio_generator_with_delay(frame_count: int, delay: float):
-    """Helper to create async audio generator with delay."""
+    """Helper to create async audio generator with delay on first frame only."""
+    # Delay before first frame
     await asyncio.sleep(delay)
     for i in range(frame_count):
         yield Mock(data=f"audio_frame_{i}")
@@ -78,7 +79,7 @@ async def test_tts_success_no_retry():
 
 @pytest.mark.asyncio
 async def test_tts_timeout_retry_success():
-    """TTS times out on first attempt, succeeds on retry."""
+    """TTS times out on first frame of first attempt, succeeds on retry."""
     config = _make_config()
     agent = InterviewAgent(config, "Design a cache")
 
@@ -91,10 +92,11 @@ async def test_tts_timeout_retry_success():
             pass
 
         if attempt_count[0] == 1:
-            # First attempt: timeout (sleep forever)
-            await asyncio.sleep(100)
+            # First attempt: timeout on first frame (delay longer than 5s timeout)
+            await asyncio.sleep(10)
+            yield Mock(data="should_never_reach")
         else:
-            # Second attempt: success
+            # Second attempt: success - yield frames immediately
             async for frame in _async_audio_generator(2):
                 yield frame
 
@@ -102,8 +104,6 @@ async def test_tts_timeout_retry_success():
 
     with patch.object(Agent.default, 'tts_node', side_effect=mock_tts_node_timeout_then_success):
         audio_frames = []
-        # Note: The timeout happens inside the iteration, not on the whole tts_node call
-        # We need to actually trigger the timeout by waiting
         async for frame in agent.tts_node(_async_text_generator(text_chunks), Mock()):
             audio_frames.append(frame)
 
@@ -178,7 +178,7 @@ async def test_tts_max_retries_logs_error_returns_silence():
 
 @pytest.mark.asyncio
 async def test_tts_timeout_max_retries_returns_silence():
-    """TTS times out on both attempts, returns silence."""
+    """TTS times out on first frame of both attempts, returns silence."""
     config = _make_config()
     agent = InterviewAgent(config, "Design a cache")
 
@@ -189,8 +189,8 @@ async def test_tts_timeout_max_retries_returns_silence():
         # Consume text
         async for _ in text:
             pass
-        # Always timeout
-        await asyncio.sleep(100)
+        # Always timeout on first frame (delay longer than 5s timeout)
+        await asyncio.sleep(10)
         yield Mock(data="should_never_reach")
 
     text_chunks = ["Timeout test"]
@@ -200,8 +200,9 @@ async def test_tts_timeout_max_retries_returns_silence():
         async for frame in agent.tts_node(_async_text_generator(text_chunks), Mock()):
             audio_frames.append(frame)
 
-    # Should attempt twice (note: timeout detection may vary based on implementation)
-    # The key is that we don't crash and return gracefully
+    # Should attempt twice (MAX_TTS_RETRIES = 2)
+    assert attempt_count[0] == 2
+    # Should return no audio (silence fallback)
     assert len(audio_frames) == 0
 
 
@@ -266,3 +267,47 @@ async def test_tts_preserves_llm_response_in_history():
     # This verifies that text made it to TTS layer, even if audio synthesis failed
     # In the real flow, llm_node records the text in history BEFORE tts_node is called
     # So TTS failure cannot lose the response
+
+
+@pytest.mark.asyncio
+async def test_tts_streams_frames_immediately():
+    """TTS streams audio frames immediately as they arrive (no buffering).
+
+    This test verifies the fix for the streaming regression - frames should be
+    yielded as they're generated, not collected and dumped at the end.
+    """
+    config = _make_config()
+    agent = InterviewAgent(config, "Design a cache")
+
+    frame_yield_times = []
+
+    async def mock_tts_node_with_delays(self, text, model_settings):
+        # Consume text
+        async for _ in text:
+            pass
+        # Yield frames with small delays between them
+        for i in range(3):
+            await asyncio.sleep(0.1)  # Small delay between frames
+            yield Mock(data=f"audio_frame_{i}")
+
+    text_chunks = ["Streaming test"]
+
+    with patch.object(Agent.default, 'tts_node', side_effect=mock_tts_node_with_delays):
+        audio_frames = []
+        start_time = asyncio.get_event_loop().time()
+
+        async for frame in agent.tts_node(_async_text_generator(text_chunks), Mock()):
+            frame_yield_times.append(asyncio.get_event_loop().time() - start_time)
+            audio_frames.append(frame)
+
+    # Should get all 3 frames
+    assert len(audio_frames) == 3
+
+    # Frames should arrive incrementally (not all at once at the end)
+    # First frame should arrive around 0.1s, second around 0.2s, third around 0.3s
+    assert len(frame_yield_times) == 3
+    # Verify frames arrive with spacing (not all buffered and released together)
+    # If buffered, all frames would arrive at ~0.3s; if streaming, they're spaced out
+    assert frame_yield_times[0] < 0.2  # First frame arrives early
+    assert frame_yield_times[1] < 0.3  # Second frame arrives before end
+    assert frame_yield_times[2] < 0.5  # Third frame arrives last
