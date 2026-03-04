@@ -182,7 +182,7 @@ async def test_recovery_context_injection():
     agent.interview_session.state.consecutive_silence_count = 3
 
     # Simulate third silence (user_text will be empty, but counter already at 3)
-    mock_chat_ctx = _make_chat_ctx_with_message("I need help")  # Use real input to trigger context check
+    mock_chat_ctx = _make_chat_ctx_with_message("")  # Empty input to maintain counter at 3 and trigger recovery
 
     agent.phase_manager.get_static_system_prompt = MagicMock(return_value="Static prompt")
     agent.phase_manager.get_dynamic_context = MagicMock(return_value="Dynamic context")
