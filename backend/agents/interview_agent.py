@@ -789,32 +789,29 @@ async def entrypoint(ctx: JobContext):
 
     @session.on("metrics_collected")
     def on_metrics(event):
-        """Log actual per-component latencies from LiveKit metrics."""
-        metrics_data = []
+        """Log per-turn timing instrumentation and token usage."""
+        # Extract timing metrics
+        stt_ms = (event.stt_duration * 1000) if hasattr(event, "stt_duration") and event.stt_duration else 0
+        llm_ttft_ms = (event.llm_ttft * 1000) if hasattr(event, "llm_ttft") and event.llm_ttft else 0
+        tts_ttfb_ms = (event.tts_ttfb * 1000) if hasattr(event, "tts_ttfb") and event.tts_ttfb else 0
 
-        # STT duration
-        if hasattr(event, "stt_duration") and event.stt_duration:
-            stt_ms = event.stt_duration * 1000
-            metrics_data.append(f"STT={stt_ms:.0f}ms")
+        # Calculate total latency (STT + LLM TTFT + TTS TTFB)
+        total_ms = stt_ms + llm_ttft_ms + tts_ttfb_ms
 
-        # LLM time to first token (TTFT)
-        if hasattr(event, "llm_ttft") and event.llm_ttft:
-            ttft_ms = event.llm_ttft * 1000
-            metrics_data.append(f"LLM-TTFT={ttft_ms:.0f}ms")
+        # Get current turn number
+        turn_number = interview_agent.interview_session.state.total_turn_count
 
-        # LLM total duration
+        # Log per-turn timing in required format
+        if stt_ms > 0 or llm_ttft_ms > 0 or tts_ttfb_ms > 0:
+            logger.info(
+                f"⚡ TURN {turn_number}: STT={stt_ms:.0f}ms LLM_TTFT={llm_ttft_ms:.0f}ms "
+                f"TTS_TTFB={tts_ttfb_ms:.0f}ms TOTAL={total_ms:.0f}ms"
+            )
+
+        # Log additional metrics for debugging
         if hasattr(event, "llm_total_duration") and event.llm_total_duration:
             llm_total_ms = event.llm_total_duration * 1000
-            metrics_data.append(f"LLM-Total={llm_total_ms:.0f}ms")
-
-        # TTS time to first byte (TTFB)
-        if hasattr(event, "tts_ttfb") and event.tts_ttfb:
-            tts_ttfb_ms = event.tts_ttfb * 1000
-            metrics_data.append(f"TTS-TTFB={tts_ttfb_ms:.0f}ms")
-
-        # Log combined metrics
-        if metrics_data:
-            logger.info(f"⚡ Component metrics: {', '.join(metrics_data)}")
+            logger.debug(f"⚡ TURN {turn_number}: LLM_Total={llm_total_ms:.0f}ms")
 
         # Log LLM token usage to validate theoretical token budget
         input_tokens = getattr(event, 'input_tokens', None) or getattr(event, 'llm_input_tokens', None)
