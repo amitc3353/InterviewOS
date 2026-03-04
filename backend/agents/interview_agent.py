@@ -16,6 +16,7 @@ from ..models.scorecard import InterviewScorecard
 from ..interview.phase_manager import PhaseManager
 from ..interview.response_parser import StreamingResponseParser
 from ..interview.scoring_engine import ScoringEngine
+from ..interview.sentry_context import set_interview_context, update_turn_context
 from ..interview.stt_wrapper import TimeoutSTT
 from ..interview.tts_pronunciations import normalize_for_tts as _normalize_for_tts
 

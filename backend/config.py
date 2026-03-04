@@ -1,8 +1,17 @@
 """Configuration for InterviewOS agents."""
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Optional
+
+try:
+    import sentry_sdk
+    SENTRY_AVAILABLE = True
+except ImportError:
+    SENTRY_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentConfig:
@@ -41,6 +50,11 @@ class AgentConfig:
 
     # Turn detection
     use_semantic_turn_detection: bool = True
+
+    # Sentry error tracking
+    sentry_dsn: Optional[str] = None
+    sentry_environment: str = "production"
+    sentry_enabled: bool = True
     
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -59,6 +73,9 @@ class AgentConfig:
             silence_threshold_ms=int(os.getenv("SILENCE_THRESHOLD_MS", "600")),
             use_semantic_turn_detection=os.getenv("SEMANTIC_TURN_DETECTION", "true").lower() != "false",
             cartesia_pronunciation_dict_id=os.getenv("CARTESIA_PRONUNCIATION_DICT_ID") or None,
+            sentry_dsn=os.getenv("SENTRY_DSN") or None,
+            sentry_environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+            sentry_enabled=os.getenv("SENTRY_ENABLED", "true").lower() != "false",
         )
     
     def validate(self) -> bool:
@@ -73,3 +90,38 @@ class AgentConfig:
             self.cartesia_api_key,
         ]
         return all(required_fields)
+
+    def init_sentry(self) -> bool:
+        """
+        Initialize Sentry SDK for error tracking.
+
+        Returns:
+            True if Sentry was initialized, False otherwise
+        """
+        # Check if Sentry is available
+        if not SENTRY_AVAILABLE:
+            logger.warning("sentry-sdk not installed, skipping error tracking")
+            return False
+
+        # Check if Sentry is enabled
+        if not self.sentry_enabled:
+            logger.info("Sentry disabled via SENTRY_ENABLED=false")
+            return False
+
+        # Check if DSN is configured
+        if not self.sentry_dsn:
+            logger.info("Sentry DSN not configured, skipping error tracking")
+            return False
+
+        try:
+            sentry_sdk.init(
+                dsn=self.sentry_dsn,
+                environment=self.sentry_environment,
+                traces_sample_rate=0.1,  # 10% of transactions for performance monitoring
+                profiles_sample_rate=0.1,  # 10% of transactions for profiling
+            )
+            logger.info(f"Sentry initialized for environment: {self.sentry_environment}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to initialize Sentry: {e}")
+            return False
