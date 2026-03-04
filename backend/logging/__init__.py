@@ -5,6 +5,8 @@ from .structured_logger import (
     LogLevel,
     get_logger,
     configure_logging,
+    set_global_context,
+    clear_global_context,
 )
 
 __all__ = [
@@ -12,4 +14,6 @@ __all__ = [
     "LogLevel",
     "get_logger",
     "configure_logging",
+    "set_global_context",
+    "clear_global_context",
 ]

@@ -14,9 +14,11 @@ import logging
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
+from functools import partial
 
 try:
     import sentry_sdk
+
     SENTRY_AVAILABLE = True
 except ImportError:
     SENTRY_AVAILABLE = False
@@ -24,6 +26,7 @@ except ImportError:
 
 class LogLevel(Enum):
     """Standard Python logging levels."""
+
     DEBUG = logging.DEBUG
     INFO = logging.INFO
     WARNING = logging.WARNING
@@ -75,10 +78,27 @@ class StructuredFormatter(logging.Formatter):
         extra_fields = {}
         for key, value in record.__dict__.items():
             if key not in [
-                "name", "msg", "args", "created", "filename", "funcName",
-                "levelname", "levelno", "lineno", "module", "msecs",
-                "message", "pathname", "process", "processName", "relativeCreated",
-                "thread", "threadName", "exc_info", "exc_text", "stack_info",
+                "name",
+                "msg",
+                "args",
+                "created",
+                "filename",
+                "funcName",
+                "levelname",
+                "levelno",
+                "lineno",
+                "module",
+                "msecs",
+                "message",
+                "pathname",
+                "process",
+                "processName",
+                "relativeCreated",
+                "thread",
+                "threadName",
+                "exc_info",
+                "exc_text",
+                "stack_info",
             ]:
                 extra_fields[key] = value
 
@@ -91,12 +111,16 @@ class StructuredFormatter(logging.Formatter):
         }
 
         # Add session_id from global context or record
-        session_id = extra_fields.pop("session_id", None) or _global_context.get("session_id")
+        session_id = extra_fields.pop("session_id", None) or _global_context.get(
+            "session_id"
+        )
         if session_id:
             log_entry["session_id"] = session_id
 
         # Add turn_number from global context or record
-        turn_number = extra_fields.pop("turn_number", None) or _global_context.get("turn_number")
+        turn_number = extra_fields.pop("turn_number", None) or _global_context.get(
+            "turn_number"
+        )
         if turn_number is not None:
             log_entry["turn_number"] = turn_number
 
@@ -126,8 +150,12 @@ class ConsoleFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record for console."""
         # Extract extra fields
-        session_id = getattr(record, "session_id", None) or _global_context.get("session_id")
-        turn_number = getattr(record, "turn_number", None) or _global_context.get("turn_number")
+        session_id = getattr(record, "session_id", None) or _global_context.get(
+            "session_id"
+        )
+        turn_number = getattr(record, "turn_number", None) or _global_context.get(
+            "turn_number"
+        )
         event_type = getattr(record, "event_type", record.name)
 
         # Build context string
@@ -185,7 +213,7 @@ class StructuredLogger:
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
         exc_info: bool = False,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """
         Internal log method with structured fields.
@@ -249,7 +277,7 @@ class StructuredLogger:
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
         exc_info: bool = False,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """
         Async log method to prevent blocking voice loop.
@@ -259,16 +287,17 @@ class StructuredLogger:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
             None,
-            self._log,
-            level,
-            message,
-            event_type,
-            session_id,
-            turn_number,
-            phase,
-            exc_info,
-            *(),  # No positional args
-            **extra_fields
+            partial(
+                self._log,
+                level,
+                message,
+                event_type,
+                session_id,
+                turn_number,
+                phase,
+                exc_info,
+                **extra_fields,
+            ),
         )
 
     def debug(
@@ -278,10 +307,19 @@ class StructuredLogger:
         session_id: Optional[str] = None,
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """Log DEBUG level message."""
-        self._log(LogLevel.DEBUG, message, event_type, session_id, turn_number, phase, False, **extra_fields)
+        self._log(
+            LogLevel.DEBUG,
+            message,
+            event_type,
+            session_id,
+            turn_number,
+            phase,
+            False,
+            **extra_fields,
+        )
 
     async def debug_async(
         self,
@@ -290,10 +328,19 @@ class StructuredLogger:
         session_id: Optional[str] = None,
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """Log DEBUG level message asynchronously."""
-        await self._log_async(LogLevel.DEBUG, message, event_type, session_id, turn_number, phase, False, **extra_fields)
+        await self._log_async(
+            LogLevel.DEBUG,
+            message,
+            event_type,
+            session_id,
+            turn_number,
+            phase,
+            False,
+            **extra_fields,
+        )
 
     def info(
         self,
@@ -302,10 +349,19 @@ class StructuredLogger:
         session_id: Optional[str] = None,
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """Log INFO level message."""
-        self._log(LogLevel.INFO, message, event_type, session_id, turn_number, phase, False, **extra_fields)
+        self._log(
+            LogLevel.INFO,
+            message,
+            event_type,
+            session_id,
+            turn_number,
+            phase,
+            False,
+            **extra_fields,
+        )
 
     async def info_async(
         self,
@@ -314,10 +370,19 @@ class StructuredLogger:
         session_id: Optional[str] = None,
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """Log INFO level message asynchronously."""
-        await self._log_async(LogLevel.INFO, message, event_type, session_id, turn_number, phase, False, **extra_fields)
+        await self._log_async(
+            LogLevel.INFO,
+            message,
+            event_type,
+            session_id,
+            turn_number,
+            phase,
+            False,
+            **extra_fields,
+        )
 
     def warning(
         self,
@@ -326,10 +391,19 @@ class StructuredLogger:
         session_id: Optional[str] = None,
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """Log WARNING level message."""
-        self._log(LogLevel.WARNING, message, event_type, session_id, turn_number, phase, False, **extra_fields)
+        self._log(
+            LogLevel.WARNING,
+            message,
+            event_type,
+            session_id,
+            turn_number,
+            phase,
+            False,
+            **extra_fields,
+        )
 
     async def warning_async(
         self,
@@ -338,10 +412,19 @@ class StructuredLogger:
         session_id: Optional[str] = None,
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """Log WARNING level message asynchronously."""
-        await self._log_async(LogLevel.WARNING, message, event_type, session_id, turn_number, phase, False, **extra_fields)
+        await self._log_async(
+            LogLevel.WARNING,
+            message,
+            event_type,
+            session_id,
+            turn_number,
+            phase,
+            False,
+            **extra_fields,
+        )
 
     def error(
         self,
@@ -351,10 +434,19 @@ class StructuredLogger:
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
         exc_info: bool = False,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """Log ERROR level message."""
-        self._log(LogLevel.ERROR, message, event_type, session_id, turn_number, phase, exc_info, **extra_fields)
+        self._log(
+            LogLevel.ERROR,
+            message,
+            event_type,
+            session_id,
+            turn_number,
+            phase,
+            exc_info,
+            **extra_fields,
+        )
 
     async def error_async(
         self,
@@ -364,10 +456,19 @@ class StructuredLogger:
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
         exc_info: bool = False,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """Log ERROR level message asynchronously."""
-        await self._log_async(LogLevel.ERROR, message, event_type, session_id, turn_number, phase, exc_info, **extra_fields)
+        await self._log_async(
+            LogLevel.ERROR,
+            message,
+            event_type,
+            session_id,
+            turn_number,
+            phase,
+            exc_info,
+            **extra_fields,
+        )
 
     def critical(
         self,
@@ -377,10 +478,19 @@ class StructuredLogger:
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
         exc_info: bool = False,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """Log CRITICAL level message."""
-        self._log(LogLevel.CRITICAL, message, event_type, session_id, turn_number, phase, exc_info, **extra_fields)
+        self._log(
+            LogLevel.CRITICAL,
+            message,
+            event_type,
+            session_id,
+            turn_number,
+            phase,
+            exc_info,
+            **extra_fields,
+        )
 
     async def critical_async(
         self,
@@ -390,10 +500,19 @@ class StructuredLogger:
         turn_number: Optional[int] = None,
         phase: Optional[str] = None,
         exc_info: bool = False,
-        **extra_fields
+        **extra_fields,
     ) -> None:
         """Log CRITICAL level message asynchronously."""
-        await self._log_async(LogLevel.CRITICAL, message, event_type, session_id, turn_number, phase, exc_info, **extra_fields)
+        await self._log_async(
+            LogLevel.CRITICAL,
+            message,
+            event_type,
+            session_id,
+            turn_number,
+            phase,
+            exc_info,
+            **extra_fields,
+        )
 
 
 def get_logger(name: str, format_mode: Optional[str] = None) -> StructuredLogger:
@@ -417,7 +536,7 @@ def get_logger(name: str, format_mode: Optional[str] = None) -> StructuredLogger
 def configure_logging(
     level: LogLevel = LogLevel.INFO,
     format_mode: str = "console",
-    include_timestamp: bool = True
+    include_timestamp: bool = True,
 ) -> None:
     """
     Configure structured logging for the application.
