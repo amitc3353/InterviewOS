@@ -51,6 +51,7 @@ class SessionState:
     phase_turn_count: int = 0  # Turns in current phase
     total_turn_count: int = 0  # Total turns in session
     last_constraint_summary_turn: int = 0  # Track when we last summarized
+    consecutive_silence_count: int = 0  # Track consecutive empty user turns
     
     def elapsed_seconds(self) -> float:
         """Total session elapsed time in seconds."""
