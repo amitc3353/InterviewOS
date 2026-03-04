@@ -293,14 +293,6 @@ class InterviewAgent(Agent):
                 kept_count=MAX_HISTORY_MESSAGES,
             )
 
-        await logger.info_async(
-            "LLM request starting",
-            event_type="llm_request",
-            turn_number=self.interview_session.state.total_turn_count,
-            phase=self.interview_session.state.phase.value,
-            phase_turn=self.interview_session.state.phase_turn_count,
-        )
-
         # --- Streaming-safe retry with timeout, rate limit, and graceful degradation ---
         # On attempt 0 we stream chunks directly (no buffering, no latency penalty).
         # On retry we buffer the new response and replay it after success.
