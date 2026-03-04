@@ -85,8 +85,8 @@ class InterviewAgent(Agent):
         session_id = str(uuid.uuid4())
         self.interview_session = InterviewSession(session_id=session_id, scenario=scenario)
 
-        # Set global logging context for this session
-        set_global_context(session_id=session_id)
+        # NOTE: Removed set_global_context to prevent context leakage in concurrent sessions
+        # Session context is now passed per-log via logger.bind() or contextual fields
 
         # Initialize interview engine components
         self.phase_manager = PhaseManager(scenario, scenario_metadata)
@@ -789,7 +789,6 @@ class InterviewAgent(Agent):
                         turn_number=self.interview_session.state.total_turn_count,
                         max_attempts=MAX_TTS_RETRIES,
                         text_length=len(full_text),
-                        text_preview=full_text[:200],
                     )
                     # Fallback to silence (don't crash the session)
                     return
@@ -817,7 +816,6 @@ class InterviewAgent(Agent):
                         status_code=str(status),
                         error_type=type(e).__name__,
                         error_message=str(e),
-                        text_preview=full_text[:200],
                     )
                     # Fallback to silence (don't crash the session)
                     return
@@ -954,7 +952,6 @@ async def entrypoint(ctx: JobContext):
         await logger.info_async(
             "Cartesia API key loaded",
             event_type="config_loaded",
-            key_preview=f"{_key[:4]}...{_key[-4:]}",
         )
     else:
         await logger.error_async(
