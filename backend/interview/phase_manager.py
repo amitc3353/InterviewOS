@@ -1,7 +1,10 @@
 """Manages interview phases and generates system prompts with INTERVIEWER_BEHAVIOR rules."""
 
+import logging
 from typing import Dict, List
 from ..models.session import InterviewPhase, SessionState, PHASE_ORDER
+
+logger = logging.getLogger(__name__)
 
 
 class PhaseManager:
@@ -110,13 +113,66 @@ Asking 3 shallow questions is worse than asking 1 deep question.
 
 **NOTE**: Dynamic context (phase, constraints, history) provided separately."""
 
+    def check_and_enforce_time_budget(self, state: SessionState) -> bool:
+        """
+        Check if current phase has exceeded its time budget and auto-advance if needed.
+
+        Args:
+            state: Current session state
+
+        Returns:
+            True if phase was auto-advanced, False otherwise
+        """
+        current_phase = state.phase
+        phase_elapsed = state.phase_elapsed_seconds()
+        time_budget = self.PHASE_DURATIONS.get(current_phase, float('inf'))
+
+        # Check if time budget exceeded
+        if phase_elapsed > time_budget:
+            # Get next phase
+            try:
+                current_idx = PHASE_ORDER.index(current_phase)
+                # Don't auto-advance from WRAP (it's the final phase)
+                if current_idx >= len(PHASE_ORDER) - 1:
+                    logger.warning(
+                        f"Phase {current_phase.value} exceeded time budget "
+                        f"({phase_elapsed:.0f}s > {time_budget:.0f}s) but is final phase, not advancing"
+                    )
+                    return False
+
+                next_phase = PHASE_ORDER[current_idx + 1]
+                logger.warning(
+                    f"Phase {current_phase.value} exceeded time budget "
+                    f"({phase_elapsed:.0f}s > {time_budget:.0f}s), auto-advancing to {next_phase.value}"
+                )
+
+                # Auto-advance to next phase
+                success = state.advance_phase(next_phase)
+                if success:
+                    logger.info(f"Auto-advanced from {current_phase.value} to {next_phase.value}")
+                    return True
+                else:
+                    logger.error(f"Failed to auto-advance from {current_phase.value} to {next_phase.value}")
+                    return False
+
+            except (ValueError, IndexError) as e:
+                logger.error(f"Error during time budget enforcement: {e}")
+                return False
+
+        return False
+
     def get_dynamic_context(self, state: SessionState) -> str:
         """
         Dynamic context that updates per turn.
 
         Appended to static prompt each turn. LLM only processes this new context,
         reusing the cached static prompt from KV-cache.
+
+        Enforces time budget limits before generating context.
         """
+        # Check and enforce time budget before generating context
+        self.check_and_enforce_time_budget(state)
+
         phase_instructions = self._get_phase_instructions(state.phase)
         locked_constraints = self._get_locked_constraints_context(state.locked_constraints)
         # NOTE: recent history is intentionally omitted here — the full conversation is
