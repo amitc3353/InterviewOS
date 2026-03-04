@@ -504,6 +504,8 @@ When working on this project, consult these documents for detailed specification
 - **INTERVIEW_PROTOCOL.md**: Interview phase specifications and timing
 - **README.md**: User-facing setup and quick start guide
 - **backend/README.md**: Backend architecture, hooks, and troubleshooting
+- **STRUCTURED_LOGGING.md**: Structured logging format and integration guide
+- **SENTRY_INTEGRATION.md**: Sentry/GlitchTip error tracking integration
 
 ## Working with AI Agents
 
@@ -568,3 +570,4 @@ Every PR must include tests. For every file you create or modify:
 - **Configuration**: `AgentConfig.from_env()` pattern
 - **Response parsing**: Always use the fallback chain (json → regex → raw)
 - **Session state**: All state goes through `SessionState` dataclass, never globals
+- **Structured logging**: Use `get_logger(__name__)` and async methods in voice loop (see STRUCTURED_LOGGING.md)

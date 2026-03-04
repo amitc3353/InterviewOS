@@ -55,6 +55,10 @@ class AgentConfig:
     sentry_dsn: Optional[str] = None
     sentry_environment: str = "production"
     sentry_enabled: bool = True
+
+    # Logging configuration
+    log_level: str = "INFO"  # DEBUG/INFO/WARNING/ERROR/CRITICAL
+    log_format: str = "console"  # "console" or "json"
     
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -76,6 +80,8 @@ class AgentConfig:
             sentry_dsn=os.getenv("SENTRY_DSN") or None,
             sentry_environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
             sentry_enabled=os.getenv("SENTRY_ENABLED", "true").lower() != "false",
+            log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+            log_format=os.getenv("LOG_FORMAT", "console").lower(),
         )
     
     def validate(self) -> bool:
@@ -124,4 +130,40 @@ class AgentConfig:
             return True
         except Exception as e:
             logger.error(f"Failed to initialize Sentry: {e}")
+            return False
+
+    def init_logging(self) -> bool:
+        """
+        Initialize structured logging system.
+
+        Returns:
+            True if logging was initialized successfully, False otherwise
+        """
+        try:
+            # Import here to avoid circular imports
+            from .logging import configure_logging, LogLevel
+
+            # Map string level to LogLevel enum
+            level_map = {
+                "DEBUG": LogLevel.DEBUG,
+                "INFO": LogLevel.INFO,
+                "WARNING": LogLevel.WARNING,
+                "ERROR": LogLevel.ERROR,
+                "CRITICAL": LogLevel.CRITICAL,
+            }
+
+            level = level_map.get(self.log_level, LogLevel.INFO)
+
+            # Configure structured logging
+            configure_logging(
+                level=level,
+                format_mode=self.log_format,
+                include_timestamp=True
+            )
+
+            logger.info(f"Structured logging initialized: level={self.log_level}, format={self.log_format}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to initialize structured logging: {e}")
             return False
