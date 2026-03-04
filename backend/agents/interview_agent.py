@@ -402,7 +402,7 @@ class InterviewAgent(Agent):
 
         if updated_constraints:
             for key, value in updated_constraints.items():
-                self.interview_session.state.lock_constraint(key, value)
+                self.interview_session.state.add_locked_constraint(key, value)
                 logger.info(f"Locked constraint: {key} = {value}")
 
         if new_phase:
