@@ -1,9 +1,12 @@
 """Interview session data models."""
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class InterviewPhase(Enum):
@@ -94,9 +97,34 @@ class SessionState:
         self.phase_turn_count = 0
         return True
     
-    def lock_constraint(self, key: str, value: str):
-        """Lock a constraint (key-value pair)."""
+    def add_locked_constraint(self, key: str, value: str):
+        """
+        Add a locked constraint (key-value pair).
+
+        If the key already exists, logs a warning with both old and new values
+        and keeps the original value (does not overwrite).
+
+        Args:
+            key: Constraint key
+            value: Constraint value
+        """
+        if key in self.locked_constraints:
+            old_value = self.locked_constraints[key]
+            logger.warning(
+                f"Constraint key '{key}' already exists. "
+                f"Keeping original value '{old_value}', ignoring new value '{value}'"
+            )
+            return
+
         self.locked_constraints[key] = value
+
+    def lock_constraint(self, key: str, value: str):
+        """
+        Legacy method for backward compatibility.
+
+        Deprecated: Use add_locked_constraint() instead.
+        """
+        self.add_locked_constraint(key, value)
     
     def has_constraint_category(self, prefix: str) -> bool:
         """Check if any locked constraint key starts with the given prefix."""
