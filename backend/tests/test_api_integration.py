@@ -62,6 +62,7 @@ def client(storage: SessionStorage):
         "LIVEKIT_API_SECRET": _TEST_API_SECRET,
     }
     with patch("backend.api.routers.sessions._get_storage", return_value=storage), \
+         patch("backend.api.tokens._get_storage", return_value=storage), \
          patch.dict(os.environ, env_vars):
         yield TestClient(app)
 
@@ -446,6 +447,7 @@ class TestLifecycleErrors:
         app = create_app()
         env_vars = {"LIVEKIT_API_KEY": "", "LIVEKIT_API_SECRET": ""}
         with patch("backend.api.routers.sessions._get_storage", return_value=storage), \
+             patch("backend.api.tokens._get_storage", return_value=storage), \
              patch.dict(os.environ, env_vars, clear=False):
             test_client = TestClient(app)
 

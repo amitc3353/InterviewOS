@@ -34,7 +34,8 @@ def storage(tmp_storage_dir: str) -> SessionStorage:
 def client(storage: SessionStorage):
     """Create a test client with isolated storage."""
     app = create_app()
-    with patch("backend.api.routers.sessions._get_storage", return_value=storage):
+    with patch("backend.api.routers.sessions._get_storage", return_value=storage), \
+         patch("backend.api.tokens._get_storage", return_value=storage):
         yield TestClient(app)
 
 
@@ -363,6 +364,7 @@ def client_with_livekit(storage: SessionStorage):
         "LIVEKIT_API_SECRET": _TEST_API_SECRET,
     }
     with patch("backend.api.routers.sessions._get_storage", return_value=storage), \
+         patch("backend.api.tokens._get_storage", return_value=storage), \
          patch.dict(os.environ, env_vars):
         yield TestClient(app)
 
@@ -474,6 +476,7 @@ def test_get_token_missing_credentials(
     app = create_app()
     env_vars = {"LIVEKIT_API_KEY": "", "LIVEKIT_API_SECRET": ""}
     with patch("backend.api.routers.sessions._get_storage", return_value=storage), \
+         patch("backend.api.tokens._get_storage", return_value=storage), \
          patch.dict(os.environ, env_vars, clear=False):
         client = TestClient(app)
         resp = client.get("/api/sessions/test-session-abc/token")
