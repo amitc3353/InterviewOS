@@ -30,6 +30,8 @@ class SessionResponse(BaseModel):
     elapsed_seconds: float
     livekit_room_name: Optional[str] = None
     created_at: str
+    overall_score: Optional[float] = None
+    hire_signal: Optional[str] = None
 
 
 class SessionListResponse(BaseModel):

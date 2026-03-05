@@ -133,12 +133,34 @@ def create_session(request: CreateSessionRequest) -> SessionResponse:
 
 @router.get("", response_model=SessionListResponse)
 def list_sessions() -> SessionListResponse:
-    """List all past interview sessions."""
+    """List all past interview sessions with optional scorecard data."""
     storage = _get_storage()
     sessions = storage.list_sessions()
+    scorecards_dir = _get_scorecards_dir()
+
+    responses = []
+    for s in sessions:
+        resp = _session_data_to_response(s)
+        # Try to attach scorecard summary if available
+        scorecard_path = os.path.join(
+            scorecards_dir, f"{s['session_id']}.json"
+        )
+        try:
+            if os.path.exists(scorecard_path):
+                with open(scorecard_path, "r") as f:
+                    scorecard = json.load(f)
+                resp.overall_score = scorecard.get("overall_score")
+                resp.hire_signal = scorecard.get("hire_signal")
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(
+                f"Skipping corrupt scorecard for {s['session_id']}: {e}"
+            )
+
+        responses.append(resp)
+
     return SessionListResponse(
-        sessions=[_session_data_to_response(s) for s in sessions],
-        total=len(sessions),
+        sessions=responses,
+        total=len(responses),
     )
 
 
