@@ -8,7 +8,7 @@ import asyncio
 import uuid
 from typing import Optional
 
-from backend.logging import get_logger, set_global_context, clear_global_context
+from backend.structured_logging import get_logger, set_global_context, clear_global_context
 from backend.config import AgentConfig
 
 

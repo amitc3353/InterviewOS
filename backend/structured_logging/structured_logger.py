@@ -21,6 +21,7 @@ try:
 
     SENTRY_AVAILABLE = True
 except ImportError:
+    sentry_sdk = None  # type: ignore[assignment]
     SENTRY_AVAILABLE = False
 
 

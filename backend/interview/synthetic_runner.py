@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from backend.logging import get_logger
+from backend.structured_logging import get_logger
 from backend.models.candidate_profile import CandidateProfile, SkillLevel
 from backend.models.session import InterviewPhase, InterviewSession, SessionState
 

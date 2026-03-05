@@ -11,7 +11,7 @@ from livekit.agents import Agent, AgentSession, AgentServer, JobContext, WorkerO
 from livekit.plugins import deepgram, openai, silero, anthropic, cartesia, turn_detector
 
 from ..config import AgentConfig
-from ..logging import get_logger, set_global_context
+from ..structured_logging import get_logger, set_global_context
 from ..models.session import InterviewSession, SessionState, InterviewPhase
 from ..models.scorecard import InterviewScorecard
 from ..interview.phase_manager import PhaseManager
