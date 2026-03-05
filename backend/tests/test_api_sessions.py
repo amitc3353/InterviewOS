@@ -5,6 +5,7 @@ import os
 import tempfile
 from unittest.mock import patch
 
+import jwt as pyjwt
 import pytest
 from fastapi.testclient import TestClient
 
@@ -343,3 +344,267 @@ def test_storage_accepts_valid_uuid_session_id(storage: SessionStorage):
     # Should not raise
     result = storage.load("550e8400-e29b-41d4-a716-446655440000")
     assert result is None  # Not found, but no ValueError
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for token and feedback tests
+# ---------------------------------------------------------------------------
+
+_TEST_API_KEY = "test-api-key"
+_TEST_API_SECRET = "test-secret-that-is-long-enough-for-hs256-signing-key-padding"
+
+
+@pytest.fixture
+def client_with_livekit(storage: SessionStorage):
+    """Create a test client with isolated storage and LiveKit env vars."""
+    app = create_app()
+    env_vars = {
+        "LIVEKIT_API_KEY": _TEST_API_KEY,
+        "LIVEKIT_API_SECRET": _TEST_API_SECRET,
+    }
+    with patch("backend.api.routers.sessions._get_storage", return_value=storage), \
+         patch.dict(os.environ, env_vars):
+        yield TestClient(app)
+
+
+@pytest.fixture
+def tmp_scorecards_dir():
+    """Create a temporary directory for scorecard files."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield tmpdir
+
+
+@pytest.fixture
+def sample_scorecard_data() -> dict:
+    """Return sample scorecard data matching FeedbackResponse schema."""
+    return {
+        "session_id": "test-session-abc",
+        "scenario": "Design a URL shortener",
+        "dimensions": {
+            "system_architecture": {
+                "dimension": "system_architecture",
+                "score": 4,
+                "label": "Strong",
+                "rationale": "Demonstrated solid architecture with clear component separation.",
+                "strengths": ["Clean API design", "Good use of caching"],
+                "gaps": ["Could explore more storage options"],
+            },
+            "technical_depth": {
+                "dimension": "technical_depth",
+                "score": 3,
+                "label": "Solid",
+                "rationale": "Showed adequate depth on hashing and encoding.",
+                "strengths": ["Understood base62 encoding"],
+                "gaps": ["Missing collision handling details"],
+            },
+            "scalability_reliability": {
+                "dimension": "scalability_reliability",
+                "score": 4,
+                "label": "Strong",
+                "rationale": "Good discussion of horizontal scaling and CDN usage.",
+                "strengths": ["CDN for reads", "Database sharding strategy"],
+                "gaps": ["No mention of circuit breakers"],
+            },
+            "communication": {
+                "dimension": "communication",
+                "score": 5,
+                "label": "Exceptional",
+                "rationale": "Clear, structured communication throughout.",
+                "strengths": ["Proactive clarification", "Visual diagrams"],
+                "gaps": [],
+            },
+            "requirements_gathering": {
+                "dimension": "requirements_gathering",
+                "score": 3,
+                "label": "Solid",
+                "rationale": "Asked relevant questions about scale and constraints.",
+                "strengths": ["Identified key traffic patterns"],
+                "gaps": ["Missed analytics requirements"],
+            },
+        },
+        "overall_score": 3.8,
+        "hire_signal": "Lean Yes",
+        "narrative": "Strong candidate with solid architecture skills. Could deepen failure mode analysis.",
+        "locked_constraints": {"database": "PostgreSQL", "cache": "Redis"},
+        "total_turns": 24,
+        "elapsed_minutes": 42.5,
+        "generated_at": "2026-01-15T14:30:00Z",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tests: GET /api/sessions/:id/token
+# ---------------------------------------------------------------------------
+
+def test_get_token_success(
+    client_with_livekit: TestClient, storage: SessionStorage, sample_session_data: dict
+):
+    """GET /api/sessions/:id/token returns valid JWT with correct claims."""
+    _seed_session(storage, sample_session_data)
+
+    resp = client_with_livekit.get("/api/sessions/test-session-abc/token")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert "token" in body
+    assert body["room_name"] == "interview-test1234"
+
+    # Decode JWT and verify claims
+    decoded = pyjwt.decode(body["token"], options={"verify_signature": False})
+    assert decoded["iss"] == _TEST_API_KEY
+    assert decoded["sub"] == "participant-test-ses"
+    assert decoded["video"]["room"] == "interview-test1234"
+    assert decoded["video"]["roomJoin"] is True
+    assert decoded["video"]["canPublish"] is True
+    assert decoded["video"]["canSubscribe"] is True
+
+
+def test_get_token_session_not_found(client_with_livekit: TestClient):
+    """GET /api/sessions/:id/token returns 404 for missing session."""
+    resp = client_with_livekit.get("/api/sessions/nonexistent-id/token")
+    assert resp.status_code == 404
+    assert "not found" in resp.json()["detail"].lower()
+
+
+def test_get_token_missing_credentials(
+    storage: SessionStorage, sample_session_data: dict
+):
+    """GET /api/sessions/:id/token returns 500 when LiveKit credentials missing."""
+    _seed_session(storage, sample_session_data)
+    app = create_app()
+    env_vars = {"LIVEKIT_API_KEY": "", "LIVEKIT_API_SECRET": ""}
+    with patch("backend.api.routers.sessions._get_storage", return_value=storage), \
+         patch.dict(os.environ, env_vars, clear=False):
+        client = TestClient(app)
+        resp = client.get("/api/sessions/test-session-abc/token")
+        assert resp.status_code == 500
+        assert "credentials" in resp.json()["detail"].lower()
+
+
+def test_get_token_no_room_name(
+    client_with_livekit: TestClient, storage: SessionStorage
+):
+    """GET /api/sessions/:id/token returns 400 when session has no room."""
+    no_room_data = {
+        "session_id": "no-room-session",
+        "scenario": "Test",
+        "phase": "intro",
+        "locked_constraints": {},
+        "conversation_history": [],
+        "transcript": [],
+        "metadata": {},
+        "scorecard": None,
+        "session_start_time": "2026-01-01T00:00:00",
+        "created_at": "2026-01-01T00:00:00",
+        "elapsed_seconds": 0.0,
+        "total_turns": 0,
+        "livekit_room_name": None,
+    }
+    _seed_session(storage, no_room_data)
+
+    resp = client_with_livekit.get("/api/sessions/no-room-session/token")
+    assert resp.status_code == 400
+    assert "no livekit room" in resp.json()["detail"].lower()
+
+
+def test_get_token_jwt_has_expiry(
+    client_with_livekit: TestClient, storage: SessionStorage, sample_session_data: dict
+):
+    """GET /api/sessions/:id/token returns JWT with expiry claim."""
+    _seed_session(storage, sample_session_data)
+
+    resp = client_with_livekit.get("/api/sessions/test-session-abc/token")
+    body = resp.json()
+    decoded = pyjwt.decode(body["token"], options={"verify_signature": False})
+    assert "exp" in decoded
+    assert decoded["exp"] > decoded["nbf"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: GET /api/sessions/:id/feedback
+# ---------------------------------------------------------------------------
+
+def test_get_feedback_success(
+    client: TestClient,
+    tmp_scorecards_dir: str,
+    sample_scorecard_data: dict,
+):
+    """GET /api/sessions/:id/feedback returns parsed scorecard."""
+    session_id = sample_scorecard_data["session_id"]
+    scorecard_path = os.path.join(tmp_scorecards_dir, f"{session_id}.json")
+    with open(scorecard_path, "w") as f:
+        json.dump(sample_scorecard_data, f)
+
+    with patch("backend.api.routers.sessions._get_scorecards_dir", return_value=tmp_scorecards_dir):
+        resp = client.get(f"/api/sessions/{session_id}/feedback")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["session_id"] == session_id
+    assert body["overall_score"] == 3.8
+    assert body["hire_signal"] == "Lean Yes"
+    assert len(body["dimensions"]) == 5
+    assert body["dimensions"]["system_architecture"]["score"] == 4
+    assert body["dimensions"]["communication"]["label"] == "Exceptional"
+    assert body["total_turns"] == 24
+    assert body["elapsed_minutes"] == 42.5
+
+
+def test_get_feedback_not_found(client: TestClient, tmp_scorecards_dir: str):
+    """GET /api/sessions/:id/feedback returns 404 for missing scorecard."""
+    with patch("backend.api.routers.sessions._get_scorecards_dir", return_value=tmp_scorecards_dir):
+        resp = client.get("/api/sessions/nonexistent-session/feedback")
+
+    assert resp.status_code == 404
+    assert "not found" in resp.json()["detail"].lower()
+
+
+def test_get_feedback_invalid_json(client: TestClient, tmp_scorecards_dir: str):
+    """GET /api/sessions/:id/feedback returns 422 for corrupt scorecard JSON."""
+    session_id = "corrupt-scorecard"
+    scorecard_path = os.path.join(tmp_scorecards_dir, f"{session_id}.json")
+    with open(scorecard_path, "w") as f:
+        f.write("{not valid json!!!")
+
+    with patch("backend.api.routers.sessions._get_scorecards_dir", return_value=tmp_scorecards_dir):
+        resp = client.get(f"/api/sessions/{session_id}/feedback")
+
+    assert resp.status_code == 422
+    assert "invalid" in resp.json()["detail"].lower()
+
+
+def test_get_feedback_dimensions_structure(
+    client: TestClient,
+    tmp_scorecards_dir: str,
+    sample_scorecard_data: dict,
+):
+    """GET /api/sessions/:id/feedback returns all dimension fields."""
+    session_id = sample_scorecard_data["session_id"]
+    scorecard_path = os.path.join(tmp_scorecards_dir, f"{session_id}.json")
+    with open(scorecard_path, "w") as f:
+        json.dump(sample_scorecard_data, f)
+
+    with patch("backend.api.routers.sessions._get_scorecards_dir", return_value=tmp_scorecards_dir):
+        resp = client.get(f"/api/sessions/{session_id}/feedback")
+
+    body = resp.json()
+    for dim_name, dim_data in body["dimensions"].items():
+        assert "dimension" in dim_data
+        assert "score" in dim_data
+        assert isinstance(dim_data["score"], int)
+        assert 1 <= dim_data["score"] <= 5
+        assert "label" in dim_data
+        assert "rationale" in dim_data
+        assert "strengths" in dim_data
+        assert isinstance(dim_data["strengths"], list)
+        assert "gaps" in dim_data
+        assert isinstance(dim_data["gaps"], list)
+
+
+def test_get_feedback_rejects_path_traversal(
+    client: TestClient, tmp_scorecards_dir: str
+):
+    """GET /api/sessions/:id/feedback rejects path traversal attempts."""
+    with patch("backend.api.routers.sessions._get_scorecards_dir", return_value=tmp_scorecards_dir):
+        resp = client.get("/api/sessions/../../etc/passwd/feedback")
+    assert resp.status_code in [400, 404, 422]
