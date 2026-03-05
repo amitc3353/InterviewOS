@@ -25,8 +25,15 @@ class SessionStorage:
         os.makedirs(self.storage_dir, exist_ok=True)
 
     def _session_path(self, session_id: str) -> str:
-        """Return the file path for a given session ID."""
-        return os.path.join(self.storage_dir, f"{session_id}.json")
+        """Return the file path for a given session ID.
+
+        Raises:
+            ValueError: If session_id contains path traversal characters.
+        """
+        safe_id = os.path.basename(session_id)
+        if not safe_id or safe_id != session_id:
+            raise ValueError(f"Invalid session ID format: {session_id}")
+        return os.path.join(self.storage_dir, f"{safe_id}.json")
 
     def save(self, session_data: Dict) -> None:
         """

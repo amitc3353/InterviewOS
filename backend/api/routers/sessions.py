@@ -133,7 +133,10 @@ def get_session_state(session_id: str) -> SessionStateResponse:
     Returns phase, locked_constraints, turn_count, and conversation history.
     """
     storage = _get_storage()
-    data = storage.load(session_id)
+    try:
+        data = storage.load(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if data is None:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 

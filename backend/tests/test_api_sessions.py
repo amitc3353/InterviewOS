@@ -302,3 +302,44 @@ def test_storage_handles_corrupt_json(storage: SessionStorage):
     sessions = storage.list_sessions()
     assert len(sessions) == 1
     assert sessions[0]["session_id"] == "valid"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Security — path traversal prevention
+# ---------------------------------------------------------------------------
+
+def test_get_session_state_rejects_path_traversal(client: TestClient):
+    """GET /api/sessions/:id/state rejects path traversal attempts."""
+    resp = client.get("/api/sessions/../../etc/passwd/state")
+    assert resp.status_code in [400, 404, 422]
+
+
+def test_storage_rejects_path_traversal_in_load(storage: SessionStorage):
+    """SessionStorage.load raises ValueError for path traversal IDs."""
+    with pytest.raises(ValueError, match="Invalid session ID format"):
+        storage.load("../../etc/passwd")
+
+
+def test_storage_rejects_path_traversal_in_save(storage: SessionStorage):
+    """SessionStorage.save raises ValueError for path traversal IDs."""
+    with pytest.raises(ValueError, match="Invalid session ID format"):
+        storage.save({"session_id": "../malicious"})
+
+
+def test_storage_rejects_path_traversal_in_delete(storage: SessionStorage):
+    """SessionStorage.delete raises ValueError for path traversal IDs."""
+    with pytest.raises(ValueError, match="Invalid session ID format"):
+        storage.delete("../../../etc/shadow")
+
+
+def test_storage_rejects_empty_session_id(storage: SessionStorage):
+    """SessionStorage rejects empty string session IDs."""
+    with pytest.raises(ValueError, match="Invalid session ID format"):
+        storage.load("")
+
+
+def test_storage_accepts_valid_uuid_session_id(storage: SessionStorage):
+    """SessionStorage accepts normal UUID-style session IDs."""
+    # Should not raise
+    result = storage.load("550e8400-e29b-41d4-a716-446655440000")
+    assert result is None  # Not found, but no ValueError
