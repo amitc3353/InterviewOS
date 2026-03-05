@@ -141,9 +141,13 @@ def list_sessions() -> SessionListResponse:
     responses = []
     for s in sessions:
         resp = _session_data_to_response(s)
+        # Skip sessions with suspicious IDs to prevent path traversal
+        session_id = s.get("session_id", "")
+        if ".." in session_id or "/" in session_id:
+            continue
         # Try to attach scorecard summary if available
         scorecard_path = os.path.join(
-            scorecards_dir, f"{s['session_id']}.json"
+            scorecards_dir, f"{session_id}.json"
         )
         try:
             if os.path.exists(scorecard_path):
