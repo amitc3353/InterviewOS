@@ -229,7 +229,7 @@ class _JsonResponseParser:
                 turn_number=self.turn_number,
                 has_phase=bool(phase),
                 has_spoken=bool(spoken_text),
-                has_constraints=bool(updated_constraints)
+                constraints_count=len(updated_constraints) if updated_constraints else 0
             )
             return spoken_text, phase, updated_constraints
         except json.JSONDecodeError as e:
