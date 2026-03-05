@@ -15,7 +15,6 @@ from backend.api.models import (
     SessionListResponse,
     SessionResponse,
     SessionStateResponse,
-    TokenResponse,
 )
 from backend.api.storage import SessionStorage
 
@@ -167,56 +166,6 @@ def get_session_state(session_id: str) -> SessionStateResponse:
         elapsed_seconds=data.get("elapsed_seconds", 0.0),
         conversation_history=data.get("conversation_history", []),
     )
-
-
-@router.get("/{session_id}/token", response_model=TokenResponse)
-def get_session_token(session_id: str) -> TokenResponse:
-    """
-    Generate a LiveKit participant token for the session.
-
-    Returns a JWT with room join and publish permissions.
-    """
-    storage = _get_storage()
-    try:
-        data = storage.load(session_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    if data is None:
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-
-    room_name = data.get("livekit_room_name")
-    if not room_name:
-        raise HTTPException(status_code=400, detail="Session has no LiveKit room")
-
-    api_key = os.getenv("LIVEKIT_API_KEY", "")
-    api_secret = os.getenv("LIVEKIT_API_SECRET", "")
-
-    if not api_key or not api_secret:
-        raise HTTPException(
-            status_code=500, detail="LiveKit credentials not configured"
-        )
-
-    try:
-        from livekit.api import AccessToken, VideoGrants
-
-        token = AccessToken(api_key=api_key, api_secret=api_secret)
-        token.with_identity(f"participant-{session_id[:8]}")
-        token.with_grants(VideoGrants(
-            room_join=True,
-            room=room_name,
-            can_publish=True,
-            can_subscribe=True,
-        ))
-        jwt_str = token.to_jwt()
-    except ImportError:
-        raise HTTPException(
-            status_code=500, detail="livekit package not installed"
-        )
-    except Exception as e:
-        logger.error(f"Failed to generate token: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate token")
-
-    return TokenResponse(token=jwt_str, room_name=room_name)
 
 
 @router.get("/{session_id}/feedback", response_model=FeedbackResponse)
