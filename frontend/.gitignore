@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next.js
+.next/
+out/
+
+# testing
+coverage/
+test-results/
+playwright-report/
+
+# production
+build/
+
+# misc
+*.tsbuildinfo
+next-env.d.ts
