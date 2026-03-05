@@ -83,6 +83,12 @@ export interface Scenario {
   difficulty: ScenarioDifficulty;
 }
 
+/** LiveKit connection token response from GET /api/sessions/:id/token */
+export interface LiveKitTokenResponse {
+  token: string;
+  url: string;
+}
+
 /** API error response */
 export interface ApiError {
   error: string;

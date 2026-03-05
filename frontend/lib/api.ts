@@ -7,6 +7,7 @@ import type {
   SessionState,
   ScoringResult,
   Scenario,
+  LiveKitTokenResponse,
   ApiError,
 } from "./types";
 import { STATIC_SCENARIOS } from "./scenarios";
@@ -100,6 +101,14 @@ export function createApiClient(options: ApiClientOptions = {}) {
     /** Get scoring results for a completed session. */
     getScore(sessionId: string): Promise<ScoringResult> {
       return request<ScoringResult>("GET", `/api/sessions/${sessionId}/score`);
+    },
+
+    /** Fetch LiveKit room token for a session. */
+    getSessionToken(sessionId: string): Promise<LiveKitTokenResponse> {
+      return request<LiveKitTokenResponse>(
+        "GET",
+        `/api/sessions/${sessionId}/token`
+      );
     },
 
     /** Health check endpoint. */
