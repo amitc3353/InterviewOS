@@ -97,6 +97,17 @@ export interface TranscriptEvent {
   phase?: InterviewPhase;
 }
 
+/** Summary of a past session for the history list */
+export interface SessionSummary {
+  session_id: string;
+  scenario: string;
+  overall_score: number | null;
+  hire_signal: "Strong Yes" | "Lean Yes" | "Lean No" | "No" | null;
+  session_start_time: string; // ISO 8601
+  elapsed_minutes: number;
+  phase: InterviewPhase;
+}
+
 /** API error response */
 export interface ApiError {
   error: string;

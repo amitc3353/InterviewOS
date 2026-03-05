@@ -6,6 +6,7 @@ import type {
   InterviewSession,
   SessionState,
   ScoringResult,
+  SessionSummary,
   Scenario,
   LiveKitTokenResponse,
   ApiError,
@@ -108,6 +109,19 @@ export function createApiClient(options: ApiClientOptions = {}) {
       return request<LiveKitTokenResponse>(
         "GET",
         `/api/sessions/${sessionId}/token`
+      );
+    },
+
+    /** Fetch all past sessions for the history page. */
+    getSessions(): Promise<SessionSummary[]> {
+      return request<SessionSummary[]>("GET", "/api/sessions");
+    },
+
+    /** Fetch feedback/scoring data for a completed session. */
+    getSessionFeedback(sessionId: string): Promise<ScoringResult> {
+      return request<ScoringResult>(
+        "GET",
+        `/api/sessions/${sessionId}/feedback`
       );
     },
 
