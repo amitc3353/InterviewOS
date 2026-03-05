@@ -71,6 +71,18 @@ export interface ScoringResult {
   generated_at: string; // ISO 8601
 }
 
+/** Difficulty level for interview scenarios */
+export type ScenarioDifficulty = "easy" | "medium" | "hard";
+
+/** Scenario summary for landing page display */
+export interface Scenario {
+  id: string;
+  name: string;
+  description: string;
+  archetype: string;
+  difficulty: ScenarioDifficulty;
+}
+
 /** API error response */
 export interface ApiError {
   error: string;
