@@ -6,8 +6,10 @@ import type {
   InterviewSession,
   SessionState,
   ScoringResult,
+  Scenario,
   ApiError,
 } from "./types";
+import { STATIC_SCENARIOS } from "./scenarios";
 
 const DEFAULT_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -103,6 +105,15 @@ export function createApiClient(options: ApiClientOptions = {}) {
     /** Health check endpoint. */
     healthCheck(): Promise<{ status: string }> {
       return request<{ status: string }>("GET", "/api/health");
+    },
+
+    /** Fetch available scenarios, falling back to static data. */
+    async getScenarios(): Promise<Scenario[]> {
+      try {
+        return await request<Scenario[]>("GET", "/api/scenarios");
+      } catch {
+        return STATIC_SCENARIOS;
+      }
     },
   };
 }

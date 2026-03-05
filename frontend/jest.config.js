@@ -5,7 +5,13 @@ module.exports = {
     "^.+\\.tsx?$": [
       "ts-jest",
       {
-        tsconfig: "tsconfig.json",
+        tsconfig: {
+          jsx: "react-jsx",
+          module: "commonjs",
+          moduleResolution: "node",
+          esModuleInterop: true,
+          paths: { "@/*": ["./*"] },
+        },
       },
     ],
   },
