@@ -92,6 +92,23 @@ class TranscriptEventManager:
                     f"Subscriber queue full for session {session_id}, dropping event"
                 )
 
+    def _publish_sync_test_only(self, session_id: str, event: TranscriptEvent) -> None:
+        """
+        Synchronously publish event for TEST USE ONLY.
+
+        WARNING: NOT thread-safe. Only use in test contexts where you control
+        timing and no concurrent subscriber modifications occur. Bypasses async
+        lock for use from non-async test code.
+        """
+        queues = self._subscribers.get(session_id, [])
+        for queue in queues:
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                logger.warning(
+                    f"Subscriber queue full for session {session_id}, dropping event"
+                )
+
     def subscriber_count(self, session_id: str) -> int:
         """Return the number of active subscribers for a session."""
         return len(self._subscribers.get(session_id, []))
