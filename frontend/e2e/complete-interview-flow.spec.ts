@@ -42,7 +42,7 @@ const MOCK_SESSION = {
   transcript: [],
   metadata: {},
   scorecard: null,
-  session_start_time: new Date().toISOString(),
+  session_start_time: "2026-02-15T10:30:00Z",
   elapsed_seconds: 0,
   total_turns: 0,
 };
@@ -355,20 +355,49 @@ test.describe("Complete interview flow", () => {
       timeout: 10000,
     });
 
-    // Update the session route to return completed session for the feedback page
-    await page.route("**/api/sessions/e2e-session-001", (route) => {
+    // Unroute the earlier broad mock and re-register with completed session data
+    await page.unroute("**/api/sessions/e2e-session-001**");
+    await page.route("**/api/sessions/e2e-session-001**", (route) => {
       const url = route.request().url();
-      if (
-        url.endsWith("/e2e-session-001") ||
-        url.endsWith("/e2e-session-001/")
-      ) {
+
+      if (url.includes("/token")) {
         return route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify(MOCK_SESSION_COMPLETED),
+          body: JSON.stringify(MOCK_TOKEN),
         });
       }
-      return route.continue();
+
+      if (url.includes("/feedback")) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(MOCK_FEEDBACK),
+        });
+      }
+
+      if (url.includes("/state")) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            session_id: MOCK_SESSION.session_id,
+            phase: "wrap",
+            locked_constraints: {},
+            conversation_history: MOCK_SESSION_COMPLETED.conversation_history,
+            phase_turn_count: 0,
+            total_turn_count: 18,
+            elapsed_seconds: 2520,
+          }),
+        });
+      }
+
+      // Base session GET returns completed session
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MOCK_SESSION_COMPLETED),
+      });
     });
 
     // Click End Interview button
@@ -476,20 +505,49 @@ test.describe("Complete interview flow", () => {
     );
     await expect(page.getByTestId("transcript-panel")).toBeVisible();
 
-    // Update session route for completed state
-    await page.route("**/api/sessions/e2e-session-001", (route) => {
+    // Unroute the earlier broad mock and re-register with completed session data
+    await page.unroute("**/api/sessions/e2e-session-001**");
+    await page.route("**/api/sessions/e2e-session-001**", (route) => {
       const url = route.request().url();
-      if (
-        url.endsWith("/e2e-session-001") ||
-        url.endsWith("/e2e-session-001/")
-      ) {
+
+      if (url.includes("/token")) {
         return route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify(MOCK_SESSION_COMPLETED),
+          body: JSON.stringify(MOCK_TOKEN),
         });
       }
-      return route.continue();
+
+      if (url.includes("/feedback")) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(MOCK_FEEDBACK),
+        });
+      }
+
+      if (url.includes("/state")) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            session_id: MOCK_SESSION.session_id,
+            phase: "wrap",
+            locked_constraints: {},
+            conversation_history: MOCK_SESSION_COMPLETED.conversation_history,
+            phase_turn_count: 0,
+            total_turn_count: 18,
+            elapsed_seconds: 2520,
+          }),
+        });
+      }
+
+      // Base session GET returns completed session
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MOCK_SESSION_COMPLETED),
+      });
     });
 
     // Step 3: End interview → feedback
