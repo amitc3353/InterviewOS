@@ -140,11 +140,13 @@ def list_sessions() -> SessionListResponse:
 
     responses = []
     for s in sessions:
-        resp = _session_data_to_response(s)
         # Skip sessions with suspicious IDs to prevent path traversal
         session_id = s.get("session_id", "")
         if ".." in session_id or "/" in session_id:
             continue
+
+        resp = _session_data_to_response(s)
+
         # Try to attach scorecard summary if available
         scorecard_path = os.path.join(
             scorecards_dir, f"{session_id}.json"
@@ -157,7 +159,7 @@ def list_sessions() -> SessionListResponse:
                 resp.hire_signal = scorecard.get("hire_signal")
         except (json.JSONDecodeError, OSError) as e:
             logger.warning(
-                f"Skipping corrupt scorecard for {s['session_id']}: {e}"
+                f"Skipping corrupt scorecard for {session_id}: {e}"
             )
 
         responses.append(resp)
