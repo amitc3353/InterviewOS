@@ -1,12 +1,12 @@
 """Interview session data models."""
 
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
+from backend.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class InterviewPhase(Enum):
@@ -43,6 +43,7 @@ class Message:
 @dataclass
 class SessionState:
     """Current session state."""
+    session_id: str = ""  # Session identifier for logging
     phase: InterviewPhase = InterviewPhase.INTRO
     locked_constraints: Dict[str, str] = field(default_factory=dict)  # key-value pairs
     conversation_history: List[Message] = field(default_factory=list)
@@ -77,25 +78,53 @@ class SessionState:
     def advance_phase(self, new_phase: InterviewPhase) -> bool:
         """
         Advance to next phase with monotonic enforcement.
-        
+
         Returns:
             True if phase changed, False if blocked
         """
+        old_phase = self.phase
         current_idx = PHASE_ORDER.index(self.phase)
         try:
             new_idx = PHASE_ORDER.index(new_phase)
         except ValueError:
             # Invalid phase
+            logger.warning(
+                f"Invalid phase requested: {new_phase}",
+                event_type="phase_invalid",
+                session_id=self.session_id,
+                turn_number=self.total_turn_count,
+                current_phase=self.phase.value,
+                requested_phase=str(new_phase)
+            )
             return False
-        
+
         # Monotonic forward only
         if new_idx <= current_idx:
+            logger.warning(
+                f"Phase transition blocked: {old_phase.value} -> {new_phase.value} (backward/same)",
+                event_type="phase_blocked",
+                session_id=self.session_id,
+                turn_number=self.total_turn_count,
+                current_phase=old_phase.value,
+                requested_phase=new_phase.value,
+                reason="monotonic_enforcement"
+            )
             return False
-        
+
         # Allow forward movement
         self.phase = new_phase
         self.phase_start_time = datetime.now()
         self.phase_turn_count = 0
+
+        logger.info(
+            f"Phase transition: {old_phase.value} -> {new_phase.value}",
+            event_type="phase_transition",
+            session_id=self.session_id,
+            turn_number=self.total_turn_count,
+            old_phase=old_phase.value,
+            new_phase=new_phase.value,
+            phase_elapsed_seconds=round((datetime.now() - self.phase_start_time).total_seconds(), 2)
+        )
         return True
     
     def add_locked_constraint(self, key: str, value: str):
@@ -112,12 +141,27 @@ class SessionState:
         if key in self.locked_constraints:
             old_value = self.locked_constraints[key]
             logger.warning(
-                f"Constraint key '{key}' already exists. "
-                f"Keeping original value '{old_value}', ignoring new value '{value}'"
+                f"Constraint conflict: key '{key}' already locked",
+                event_type="constraint_conflict",
+                session_id=self.session_id,
+                turn_number=self.total_turn_count,
+                constraint_key=key,
+                existing_value=old_value,
+                attempted_value=value,
+                action="keeping_original"
             )
             return
 
         self.locked_constraints[key] = value
+        logger.info(
+            f"Constraint added: {key}={value}",
+            event_type="constraint_added",
+            session_id=self.session_id,
+            turn_number=self.total_turn_count,
+            constraint_key=key,
+            constraint_value=value,
+            total_constraints=len(self.locked_constraints)
+        )
 
     def lock_constraint(self, key: str, value: str):
         """

@@ -1,10 +1,10 @@
 """Manages interview phases and generates system prompts with INTERVIEWER_BEHAVIOR rules."""
 
-import logging
 from typing import Dict, List
+from backend.logging import get_logger
 from ..models.session import InterviewPhase, SessionState, PHASE_ORDER
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class PhaseManager:
@@ -136,27 +136,62 @@ Asking 3 shallow questions is worse than asking 1 deep question.
                 if current_idx >= len(PHASE_ORDER) - 1:
                     logger.warning(
                         f"Phase {current_phase.value} exceeded time budget "
-                        f"({phase_elapsed:.0f}s > {time_budget:.0f}s) but is final phase, not advancing"
+                        f"({phase_elapsed:.0f}s > {time_budget:.0f}s) but is final phase, not advancing",
+                        event_type="phase_timeout",
+                        session_id=state.session_id,
+                        turn_number=state.total_turn_count,
+                        phase=current_phase.value,
+                        phase_elapsed_seconds=int(phase_elapsed),
+                        time_budget_seconds=int(time_budget)
                     )
                     return False
 
                 next_phase = PHASE_ORDER[current_idx + 1]
                 logger.warning(
                     f"Phase {current_phase.value} exceeded time budget "
-                    f"({phase_elapsed:.0f}s > {time_budget:.0f}s), auto-advancing to {next_phase.value}"
+                    f"({phase_elapsed:.0f}s > {time_budget:.0f}s), auto-advancing to {next_phase.value}",
+                    event_type="phase_timeout",
+                    session_id=state.session_id,
+                    turn_number=state.total_turn_count,
+                    phase=current_phase.value,
+                    next_phase=next_phase.value,
+                    phase_elapsed_seconds=int(phase_elapsed),
+                    time_budget_seconds=int(time_budget)
                 )
 
                 # Auto-advance to next phase
                 success = state.advance_phase(next_phase)
                 if success:
-                    logger.info(f"Auto-advanced from {current_phase.value} to {next_phase.value}")
+                    logger.info(
+                        f"Auto-advanced from {current_phase.value} to {next_phase.value}",
+                        event_type="phase_transition",
+                        session_id=state.session_id,
+                        turn_number=state.total_turn_count,
+                        from_phase=current_phase.value,
+                        to_phase=next_phase.value,
+                        trigger="time_budget"
+                    )
                     return True
                 else:
-                    logger.error(f"Failed to auto-advance from {current_phase.value} to {next_phase.value}")
+                    logger.error(
+                        f"Failed to auto-advance from {current_phase.value} to {next_phase.value}",
+                        event_type="phase_transition_failed",
+                        session_id=state.session_id,
+                        turn_number=state.total_turn_count,
+                        from_phase=current_phase.value,
+                        to_phase=next_phase.value
+                    )
                     return False
 
             except (ValueError, IndexError) as e:
-                logger.error(f"Error during time budget enforcement: {e}")
+                logger.error(
+                    f"Error during time budget enforcement: {e}",
+                    event_type="phase_error",
+                    session_id=state.session_id,
+                    turn_number=state.total_turn_count,
+                    phase=current_phase.value,
+                    exc_info=True
+                )
                 return False
 
         return False
@@ -170,6 +205,16 @@ Asking 3 shallow questions is worse than asking 1 deep question.
 
         Enforces time budget limits before generating context.
         """
+        logger.debug(
+            f"Generating dynamic context for phase {state.phase.value}",
+            event_type="dynamic_context_generate",
+            session_id=state.session_id,
+            turn_number=state.total_turn_count,
+            phase=state.phase.value,
+            phase_turn_count=state.phase_turn_count,
+            constraints_count=len(state.locked_constraints)
+        )
+
         # Check and enforce time budget before generating context
         self.check_and_enforce_time_budget(state)
 
@@ -190,6 +235,14 @@ Asking 3 shallow questions is worse than asking 1 deep question.
 
     def get_system_prompt(self, state: SessionState) -> str:
         """Generate complete system prompt with all INTERVIEWER_BEHAVIOR rules."""
+        logger.debug(
+            f"Generating system prompt for phase {state.phase.value}",
+            event_type="system_prompt_generate",
+            session_id=state.session_id,
+            turn_number=state.total_turn_count,
+            phase=state.phase.value
+        )
+
         base_behavior = self._get_interviewer_behavior_rules()
         phase_instructions = self._get_phase_instructions(state.phase)
         locked_constraints = self._get_locked_constraints_context(state.locked_constraints)
@@ -1598,25 +1651,55 @@ established X, Y, Z — now let's move to design."
     def should_transition_phase(self, state: SessionState, requested_phase: InterviewPhase) -> bool:
         """
         Determine if phase transition should be allowed.
-        
+
         Combines time-based and content-based checks.
         """
         current_phase = state.phase
-        
+
         # Can't go backward (monotonic enforcement happens in SessionState.advance_phase)
         current_idx = PHASE_ORDER.index(current_phase)
         try:
             requested_idx = PHASE_ORDER.index(requested_phase)
         except ValueError:
+            logger.debug(
+                f"Invalid phase requested: {requested_phase}",
+                event_type="phase_transition_check",
+                session_id=state.session_id,
+                turn_number=state.total_turn_count,
+                current_phase=current_phase.value,
+                requested_phase=str(requested_phase),
+                result="rejected_invalid"
+            )
             return False
-        
+
         if requested_idx <= current_idx:
+            logger.debug(
+                f"Phase transition rejected: cannot go backward from {current_phase.value} to {requested_phase.value}",
+                event_type="phase_transition_check",
+                session_id=state.session_id,
+                turn_number=state.total_turn_count,
+                current_phase=current_phase.value,
+                requested_phase=requested_phase.value,
+                result="rejected_monotonic"
+            )
             return False
-        
+
         # Special logic for scope → architecture
         if current_phase == InterviewPhase.SCOPE and requested_phase == InterviewPhase.ARCHITECTURE:
-            return self.should_transition_scope_to_architecture(state)
-        
+            allowed = self.should_transition_scope_to_architecture(state)
+            logger.debug(
+                f"Scope → Architecture transition check: {'allowed' if allowed else 'blocked'}",
+                event_type="phase_transition_check",
+                session_id=state.session_id,
+                turn_number=state.total_turn_count,
+                current_phase=current_phase.value,
+                requested_phase=requested_phase.value,
+                phase_turn_count=state.phase_turn_count,
+                locked_constraints_count=len(state.locked_constraints),
+                result="allowed" if allowed else "rejected_constraints"
+            )
+            return allowed
+
         # Per-phase minimum turns (calibrated to 45-min interview target at ~1.5 min/turn)
         # SCOPE handled separately above via should_transition_scope_to_architecture
         phase_min_turns = {
@@ -1630,8 +1713,28 @@ established X, Y, Z — now let's move to design."
         }
         min_turns = phase_min_turns.get(current_phase, 2)
         if state.phase_turn_count < min_turns:
+            logger.debug(
+                f"Phase transition blocked: {current_phase.value} needs {min_turns - state.phase_turn_count} more turns",
+                event_type="phase_transition_check",
+                session_id=state.session_id,
+                turn_number=state.total_turn_count,
+                current_phase=current_phase.value,
+                requested_phase=requested_phase.value,
+                phase_turn_count=state.phase_turn_count,
+                min_turns_required=min_turns,
+                result="rejected_min_turns"
+            )
             return False
-        
+
+        logger.debug(
+            f"Phase transition allowed: {current_phase.value} → {requested_phase.value}",
+            event_type="phase_transition_check",
+            session_id=state.session_id,
+            turn_number=state.total_turn_count,
+            current_phase=current_phase.value,
+            requested_phase=requested_phase.value,
+            result="allowed"
+        )
         return True
     
     def get_next_phase(self, current_phase: InterviewPhase) -> InterviewPhase:

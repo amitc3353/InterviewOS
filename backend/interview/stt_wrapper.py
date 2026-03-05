@@ -1,13 +1,14 @@
 """STT wrapper with timeout and error handling."""
 
 import asyncio
-import logging
 from typing import AsyncIterator, Optional
 
 from livekit import rtc
 from livekit.agents import stt
 
-logger = logging.getLogger(__name__)
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class TimeoutSTT(stt.STT):
@@ -65,10 +66,11 @@ class TimeoutSTT(stt.STT):
 
             # Check for empty response
             if not event or not event.alternatives or not event.alternatives[0].text.strip():
-                logger.warning(
-                    "STT returned empty response — turn=%d duration=%.2fs",
-                    self._turn_number,
-                    duration,
+                await logger.warning_async(
+                    "STT returned empty response",
+                    event_type="stt_empty",
+                    turn_number=self._turn_number,
+                    duration_seconds=round(duration, 2),
                 )
                 # Return empty event to trigger recovery logic
                 return stt.SpeechEvent(
@@ -76,19 +78,23 @@ class TimeoutSTT(stt.STT):
                     alternatives=[stt.SpeechData(text="", language="")],
                 )
 
-            logger.debug(
-                "STT recognized text in %.2fs: %s",
-                duration,
-                event.alternatives[0].text[:50],
+            await logger.debug_async(
+                f"STT recognized text in {duration:.2f}s",
+                event_type="stt_recognized",
+                turn_number=self._turn_number,
+                duration_seconds=round(duration, 2),
+                text_preview=event.alternatives[0].text[:50],
             )
             return event
 
         except asyncio.TimeoutError:
             duration = asyncio.get_event_loop().time() - start_time
-            logger.error(
-                "STT timeout after %.2fs — turn=%d",
-                duration,
-                self._turn_number,
+            await logger.error_async(
+                f"STT timeout after {duration:.2f}s",
+                event_type="stt_timeout",
+                turn_number=self._turn_number,
+                timeout_seconds=self._timeout,
+                duration_seconds=round(duration, 2),
             )
             # Return empty event to trigger recovery logic
             return stt.SpeechEvent(
@@ -98,11 +104,12 @@ class TimeoutSTT(stt.STT):
 
         except Exception as e:
             duration = asyncio.get_event_loop().time() - start_time
-            logger.error(
-                "STT error after %.2fs — turn=%d error=%s",
-                duration,
-                self._turn_number,
-                e,
+            await logger.error_async(
+                f"STT error after {duration:.2f}s: {e}",
+                event_type="stt_error",
+                turn_number=self._turn_number,
+                duration_seconds=round(duration, 2),
+                error_type=type(e).__name__,
                 exc_info=True,
             )
             # Return empty event to trigger recovery logic
@@ -176,19 +183,21 @@ class TimeoutSpeechStream(stt.SpeechStream):
             return event
 
         except asyncio.TimeoutError:
-            logger.error(
-                "STT stream timeout after %.2fs — turn=%d",
-                self._timeout,
-                self._turn_number,
+            await logger.error_async(
+                f"STT stream timeout after {self._timeout:.2f}s",
+                event_type="stt_stream_timeout",
+                turn_number=self._turn_number,
+                timeout_seconds=self._timeout,
             )
             # End the stream on timeout
             raise StopAsyncIteration
 
         except Exception as e:
-            logger.error(
-                "STT stream error — turn=%d error=%s",
-                self._turn_number,
-                e,
+            await logger.error_async(
+                f"STT stream error: {e}",
+                event_type="stt_stream_error",
+                turn_number=self._turn_number,
+                error_type=type(e).__name__,
                 exc_info=True,
             )
             # End the stream on error
@@ -210,6 +219,14 @@ class TimeoutSpeechStream(stt.SpeechStream):
                 timeout=self._timeout,
             )
         except asyncio.TimeoutError:
-            logger.warning("STT stream flush timeout after %.2fs", self._timeout)
+            await logger.warning_async(
+                f"STT stream flush timeout after {self._timeout:.2f}s",
+                event_type="stt_flush_timeout",
+                timeout_seconds=self._timeout,
+            )
         except Exception as e:
-            logger.error("STT stream flush error: %s", e)
+            await logger.error_async(
+                f"STT stream flush error: {e}",
+                event_type="stt_flush_error",
+                error_type=type(e).__name__,
+            )
