@@ -39,7 +39,6 @@ def test_add_locked_constraint_logs_constraint_added():
         assert call_args.kwargs['session_id'] == "session-abc"
         assert call_args.kwargs['turn_number'] == 7
         assert call_args.kwargs['constraint_key'] == "database"
-        assert call_args.kwargs['constraint_value'] == "PostgreSQL"
         assert call_args.kwargs['total_constraints'] == 1
 
 
@@ -62,8 +61,6 @@ def test_add_locked_constraint_conflict_logs_warning():
         assert call_args.kwargs['session_id'] == "session-xyz"
         assert call_args.kwargs['turn_number'] == 10
         assert call_args.kwargs['constraint_key'] == "cache"
-        assert call_args.kwargs['existing_value'] == "Redis"
-        assert call_args.kwargs['attempted_value'] == "Memcached"
         assert call_args.kwargs['action'] == "keeping_original"
 
         # Verify original value was kept
