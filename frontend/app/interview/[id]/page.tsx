@@ -45,7 +45,8 @@ export default function InterviewRoom() {
 
   function handleEndInterview() {
     disconnect();
-    router.push("/");
+    if (!sessionId) return;
+    router.push(`/feedback/${encodeURIComponent(sessionId)}`);
   }
 
   if (loading) {
