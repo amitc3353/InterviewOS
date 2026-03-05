@@ -65,11 +65,29 @@ class SessionState:
     def add_message(self, role: str, content: str):
         """Add message to conversation history."""
         self.conversation_history.append(Message(role=role, content=content))
-        
+
         # Increment turn count
         if role == "user":
             self.phase_turn_count += 1
             self.total_turn_count += 1
+            logger.debug(
+                f"User turn {self.total_turn_count} in {self.phase.value} phase",
+                event_type="turn_start",
+                session_id=self.session_id,
+                turn_number=self.total_turn_count,
+                phase=self.phase.value,
+                phase_turn_count=self.phase_turn_count,
+                message_length=len(content)
+            )
+        else:
+            logger.debug(
+                f"Assistant response in {self.phase.value} phase",
+                event_type="assistant_response",
+                session_id=self.session_id,
+                turn_number=self.total_turn_count,
+                phase=self.phase.value,
+                message_length=len(content)
+            )
     
     def get_recent_history(self, window_size: int = 5) -> List[Message]:
         """Get last N messages for LLM context."""
@@ -89,19 +107,20 @@ class SessionState:
         except ValueError:
             # Invalid phase
             logger.warning(
-                f"Invalid phase requested: {new_phase}",
+                f"Invalid phase transition attempted: {old_phase.value} → {new_phase}",
                 event_type="phase_invalid",
                 session_id=self.session_id,
                 turn_number=self.total_turn_count,
-                current_phase=self.phase.value,
-                requested_phase=str(new_phase)
+                current_phase=old_phase.value,
+                requested_phase=str(new_phase),
+                reason="invalid_phase"
             )
             return False
 
         # Monotonic forward only
         if new_idx <= current_idx:
             logger.warning(
-                f"Phase transition blocked: {old_phase.value} -> {new_phase.value} (backward/same)",
+                f"Phase transition blocked: {old_phase.value} → {new_phase.value}",
                 event_type="phase_blocked",
                 session_id=self.session_id,
                 turn_number=self.total_turn_count,
@@ -112,19 +131,24 @@ class SessionState:
             return False
 
         # Allow forward movement
+        phase_elapsed = self.phase_elapsed_seconds()
+        old_phase_turn_count = self.phase_turn_count
         self.phase = new_phase
         self.phase_start_time = datetime.now()
         self.phase_turn_count = 0
 
         logger.info(
-            f"Phase transition: {old_phase.value} -> {new_phase.value}",
+            f"Phase transition: {old_phase.value} → {new_phase.value}",
             event_type="phase_transition",
             session_id=self.session_id,
             turn_number=self.total_turn_count,
             old_phase=old_phase.value,
             new_phase=new_phase.value,
-            phase_elapsed_seconds=round((datetime.now() - self.phase_start_time).total_seconds(), 2)
+            phase_elapsed_seconds=phase_elapsed,
+            phase_turn_count=old_phase_turn_count,
+            constraint_count=len(self.locked_constraints)
         )
+
         return True
     
     def add_locked_constraint(self, key: str, value: str):
@@ -141,10 +165,12 @@ class SessionState:
         if key in self.locked_constraints:
             old_value = self.locked_constraints[key]
             logger.warning(
-                f"Constraint conflict: key '{key}' already locked",
+                f"Constraint key '{key}' already exists. "
+                f"Keeping original value '{old_value}', ignoring new value '{value}'",
                 event_type="constraint_conflict",
                 session_id=self.session_id,
                 turn_number=self.total_turn_count,
+                phase=self.phase.value,
                 constraint_key=key,
                 existing_value=old_value,
                 attempted_value=value,
@@ -158,6 +184,7 @@ class SessionState:
             event_type="constraint_added",
             session_id=self.session_id,
             turn_number=self.total_turn_count,
+            phase=self.phase.value,
             constraint_key=key,
             constraint_value=value,
             total_constraints=len(self.locked_constraints)
@@ -185,6 +212,11 @@ class InterviewSession:
     transcript: List[Dict] = field(default_factory=list)
     metadata: Dict = field(default_factory=dict)
     scorecard: Optional[Dict] = None
+
+    def __post_init__(self):
+        """Initialize SessionState with session_id after dataclass creation."""
+        if not self.state.session_id:
+            self.state.session_id = self.session_id
 
     def to_dict(self) -> Dict:
         """Convert session to dictionary for storage."""

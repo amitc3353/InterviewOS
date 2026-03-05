@@ -179,6 +179,7 @@ def test_json_parser_success_logs_debug():
         assert call_args.kwargs['turn_number'] == 12
         assert call_args.kwargs['has_phase'] is True
         assert call_args.kwargs['has_spoken'] is True
+        assert call_args.kwargs['constraints_count'] == 0
 
 
 def test_json_parser_failure_logs_warning():
@@ -191,7 +192,7 @@ def test_json_parser_failure_logs_warning():
         parser = _JsonResponseParser(session_id="session-jparser-2", turn_number=20)
 
         # Feed malformed JSON
-        malformed = '{"question": "What about', "phase": "scope"}'
+        malformed = '{"question": "What about", "phase": "scope"'
         spoken, phase, constraints = parser.parse(malformed)
 
         # Should fall back and still return something
