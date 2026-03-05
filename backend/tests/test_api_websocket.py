@@ -447,3 +447,219 @@ def test_history_entry_to_message_missing_fields():
     assert result["timestamp"] == ""
     assert result["phase"] == "intro"
     assert result["turn_number"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: WebSocket endpoint — reconnection handling
+# ---------------------------------------------------------------------------
+
+def _make_reconnection_session_data(session_id: str, history: list) -> dict:
+    """Build minimal session data for reconnection tests."""
+    return {
+        "session_id": session_id,
+        "scenario": "Design a message queue",
+        "phase": "architecture",
+        "locked_constraints": {},
+        "conversation_history": history,
+        "transcript": [],
+        "metadata": {},
+        "scorecard": None,
+        "session_start_time": "2026-01-01T00:00:00",
+        "created_at": "2026-01-01T00:00:00",
+        "elapsed_seconds": 60.0,
+        "total_turns": len(history),
+        "livekit_room_name": None,
+    }
+
+
+def test_websocket_reconnect_receives_full_history(
+    client: TestClient, storage: SessionStorage
+):
+    """After disconnect+reconnect, client receives full conversation history again."""
+    history = [
+        {"role": "assistant", "content": "Let's discuss the design.", "timestamp": "2026-01-01T00:00:00"},
+        {"role": "user", "content": "I'd start with requirements.", "timestamp": "2026-01-01T00:00:05"},
+        {"role": "assistant", "content": "Good. What scale?", "timestamp": "2026-01-01T00:00:10"},
+    ]
+    data = _make_reconnection_session_data("reconnect-session", history)
+    _seed_session(storage, data)
+
+    manager = get_transcript_manager()
+
+    # First connection — receive history and disconnect
+    with client.websocket_connect("/api/sessions/reconnect-session/transcript") as ws:
+        for _ in range(3):
+            ws.receive_json()
+        assert manager.subscriber_count("reconnect-session") == 1
+
+    # After disconnect, subscriber is cleaned up
+    assert manager.subscriber_count("reconnect-session") == 0
+
+    # Reconnect — should receive the same full history again
+    with client.websocket_connect("/api/sessions/reconnect-session/transcript") as ws:
+        msg1 = ws.receive_json()
+        assert msg1["speaker"] == "interviewer"
+        assert msg1["text"] == "Let's discuss the design."
+        assert msg1["turn_number"] == 0
+
+        msg2 = ws.receive_json()
+        assert msg2["speaker"] == "candidate"
+        assert msg2["text"] == "I'd start with requirements."
+        assert msg2["turn_number"] == 1
+
+        msg3 = ws.receive_json()
+        assert msg3["speaker"] == "interviewer"
+        assert msg3["text"] == "Good. What scale?"
+        assert msg3["turn_number"] == 2
+
+        assert manager.subscriber_count("reconnect-session") == 1
+
+
+def test_websocket_reconnect_gets_new_subscriber(
+    client: TestClient, storage: SessionStorage
+):
+    """Each reconnection creates a fresh subscriber queue."""
+    data = _make_reconnection_session_data("resub-session", [])
+    _seed_session(storage, data)
+
+    manager = get_transcript_manager()
+
+    # Connect, verify subscriber count, disconnect
+    with client.websocket_connect("/api/sessions/resub-session/transcript"):
+        assert manager.subscriber_count("resub-session") == 1
+
+    assert manager.subscriber_count("resub-session") == 0
+
+    # Reconnect — new subscriber
+    with client.websocket_connect("/api/sessions/resub-session/transcript"):
+        assert manager.subscriber_count("resub-session") == 1
+
+    assert manager.subscriber_count("resub-session") == 0
+
+
+def test_websocket_reconnect_receives_events_after_rejoin(
+    client: TestClient, storage: SessionStorage
+):
+    """After reconnection, client receives new events published post-reconnect."""
+    data = _make_reconnection_session_data("rejoin-session", [])
+    _seed_session(storage, data)
+
+    manager = get_transcript_manager()
+
+    # First connection and disconnect
+    with client.websocket_connect("/api/sessions/rejoin-session/transcript"):
+        pass
+
+    # Reconnect and verify new events arrive
+    with client.websocket_connect("/api/sessions/rejoin-session/transcript") as ws:
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        event = TranscriptEvent(
+            speaker="interviewer",
+            text="Welcome back! Let's continue.",
+            phase="architecture",
+            turn_number=0,
+            timestamp="2026-01-15T11:00:00",
+        )
+        loop.run_until_complete(manager.publish("rejoin-session", event))
+        loop.close()
+
+        msg = ws.receive_json()
+        assert msg["speaker"] == "interviewer"
+        assert msg["text"] == "Welcome back! Let's continue."
+        assert msg["turn_number"] == 0
+
+
+def test_websocket_concurrent_connections_same_session(
+    client: TestClient, storage: SessionStorage
+):
+    """Multiple simultaneous WebSocket connections to same session each receive events."""
+    data = _make_reconnection_session_data("concurrent-session", [])
+    _seed_session(storage, data)
+
+    manager = get_transcript_manager()
+
+    with client.websocket_connect("/api/sessions/concurrent-session/transcript") as ws1:
+        assert manager.subscriber_count("concurrent-session") == 1
+
+        with client.websocket_connect("/api/sessions/concurrent-session/transcript") as ws2:
+            assert manager.subscriber_count("concurrent-session") == 2
+
+            import asyncio
+            loop = asyncio.new_event_loop()
+            event = TranscriptEvent(
+                speaker="candidate",
+                text="Both should see this.",
+                phase="architecture",
+                turn_number=0,
+                timestamp="2026-01-15T12:00:00",
+            )
+            loop.run_until_complete(manager.publish("concurrent-session", event))
+            loop.close()
+
+            msg1 = ws1.receive_json()
+            msg2 = ws2.receive_json()
+            assert msg1["text"] == "Both should see this."
+            assert msg2["text"] == "Both should see this."
+
+        # ws2 disconnected
+        assert manager.subscriber_count("concurrent-session") == 1
+
+    # ws1 disconnected
+    assert manager.subscriber_count("concurrent-session") == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: WebSocket endpoint — mock agent transcript stream
+# ---------------------------------------------------------------------------
+
+def test_websocket_receives_sequential_agent_events(
+    client: TestClient, storage: SessionStorage
+):
+    """WebSocket receives multiple events in order from simulated agent stream."""
+    data = _make_reconnection_session_data("stream-session", [])
+    _seed_session(storage, data)
+
+    manager = get_transcript_manager()
+
+    with client.websocket_connect("/api/sessions/stream-session/transcript") as ws:
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        events = [
+            TranscriptEvent(
+                speaker="candidate",
+                text="I would use Kafka.",
+                phase="architecture",
+                turn_number=0,
+                timestamp="2026-01-15T10:00:00",
+            ),
+            TranscriptEvent(
+                speaker="interviewer",
+                text="Why Kafka over RabbitMQ?",
+                phase="architecture",
+                turn_number=1,
+                timestamp="2026-01-15T10:00:05",
+            ),
+            TranscriptEvent(
+                speaker="candidate",
+                text="Higher throughput for our scale.",
+                phase="architecture",
+                turn_number=2,
+                timestamp="2026-01-15T10:00:10",
+            ),
+        ]
+        for event in events:
+            loop.run_until_complete(manager.publish("stream-session", event))
+        loop.close()
+
+        received = [ws.receive_json() for _ in range(3)]
+        assert received[0]["speaker"] == "candidate"
+        assert received[0]["text"] == "I would use Kafka."
+        assert received[1]["speaker"] == "interviewer"
+        assert received[1]["text"] == "Why Kafka over RabbitMQ?"
+        assert received[2]["speaker"] == "candidate"
+        assert received[2]["text"] == "Higher throughput for our scale."
+        # Verify ordering by turn_number
+        assert [m["turn_number"] for m in received] == [0, 1, 2]
