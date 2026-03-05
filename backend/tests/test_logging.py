@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
 
-from backend.logging import (
+from backend.structured_logging import (
     StructuredLogger,
     LogLevel,
     get_logger,
@@ -25,7 +25,7 @@ from backend.logging import (
     set_global_context,
     clear_global_context,
 )
-from backend.logging.structured_logger import StructuredFormatter, ConsoleFormatter
+from backend.structured_logging.structured_logger import StructuredFormatter, ConsoleFormatter
 
 
 # ---------------------------------------------------------------------------
@@ -259,8 +259,8 @@ def test_multiple_critical_events_preserve_context():
 # ---------------------------------------------------------------------------
 
 
-@patch("backend.logging.structured_logger.SENTRY_AVAILABLE", True)
-@patch("backend.logging.structured_logger.sentry_sdk")
+@patch("backend.structured_logging.structured_logger.SENTRY_AVAILABLE", True)
+@patch("backend.structured_logging.structured_logger.sentry_sdk")
 def test_sentry_error_tags_are_set(mock_sentry):
     """ERROR logs set all required Sentry tags."""
     logger = StructuredLogger("test.logger", format_mode="json")
@@ -281,8 +281,8 @@ def test_sentry_error_tags_are_set(mock_sentry):
     mock_sentry.set_tag.assert_any_call("event_type", "llm_timeout")
 
 
-@patch("backend.logging.structured_logger.SENTRY_AVAILABLE", True)
-@patch("backend.logging.structured_logger.sentry_sdk")
+@patch("backend.structured_logging.structured_logger.SENTRY_AVAILABLE", True)
+@patch("backend.structured_logging.structured_logger.sentry_sdk")
 def test_sentry_context_includes_extra_fields(mock_sentry):
     """Sentry context includes all extra fields."""
     logger = StructuredLogger("test.logger", format_mode="json")
@@ -305,8 +305,8 @@ def test_sentry_context_includes_extra_fields(mock_sentry):
     assert context_args[0][1]["endpoint"] == "/api/llm"
 
 
-@patch("backend.logging.structured_logger.SENTRY_AVAILABLE", True)
-@patch("backend.logging.structured_logger.sentry_sdk")
+@patch("backend.structured_logging.structured_logger.SENTRY_AVAILABLE", True)
+@patch("backend.structured_logging.structured_logger.sentry_sdk")
 def test_sentry_critical_level_captured(mock_sentry):
     """CRITICAL logs are captured in Sentry."""
     logger = StructuredLogger("test.logger", format_mode="json")
@@ -322,8 +322,8 @@ def test_sentry_critical_level_captured(mock_sentry):
     assert call_args[1]["level"] == "critical"
 
 
-@patch("backend.logging.structured_logger.SENTRY_AVAILABLE", True)
-@patch("backend.logging.structured_logger.sentry_sdk")
+@patch("backend.structured_logging.structured_logger.SENTRY_AVAILABLE", True)
+@patch("backend.structured_logging.structured_logger.sentry_sdk")
 def test_sentry_exception_capture_with_exc_info(mock_sentry):
     """Exceptions are captured in Sentry when exc_info=True."""
     logger = StructuredLogger("test.logger", format_mode="json")
@@ -337,8 +337,8 @@ def test_sentry_exception_capture_with_exc_info(mock_sentry):
     mock_sentry.capture_exception.assert_called_once()
 
 
-@patch("backend.logging.structured_logger.SENTRY_AVAILABLE", True)
-@patch("backend.logging.structured_logger.sentry_sdk")
+@patch("backend.structured_logging.structured_logger.SENTRY_AVAILABLE", True)
+@patch("backend.structured_logging.structured_logger.sentry_sdk")
 def test_sentry_not_called_for_info_level(mock_sentry):
     """INFO/WARNING/DEBUG logs do not trigger Sentry."""
     logger = StructuredLogger("test.logger", format_mode="json")
@@ -353,8 +353,8 @@ def test_sentry_not_called_for_info_level(mock_sentry):
     mock_sentry.capture_exception.assert_not_called()
 
 
-@patch("backend.logging.structured_logger.SENTRY_AVAILABLE", True)
-@patch("backend.logging.structured_logger.sentry_sdk")
+@patch("backend.structured_logging.structured_logger.SENTRY_AVAILABLE", True)
+@patch("backend.structured_logging.structured_logger.sentry_sdk")
 def test_sentry_failure_does_not_break_logging(mock_sentry):
     """Sentry errors don't prevent logging from working."""
     # Make Sentry raise an exception
@@ -469,8 +469,8 @@ async def test_async_logging_with_global_context():
 @pytest.mark.asyncio
 async def test_async_error_logging_performance():
     """Async ERROR logging doesn't block despite Sentry integration."""
-    with patch("backend.logging.structured_logger.SENTRY_AVAILABLE", True), patch(
-        "backend.logging.structured_logger.sentry_sdk"
+    with patch("backend.structured_logging.structured_logger.SENTRY_AVAILABLE", True), patch(
+        "backend.structured_logging.structured_logger.sentry_sdk"
     ):
         logger = StructuredLogger("test.logger", format_mode="json")
         stream = _capture_log_output(logger.logger, format_mode="json")

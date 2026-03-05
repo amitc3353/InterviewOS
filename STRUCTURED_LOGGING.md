@@ -76,7 +76,7 @@ SENTRY_ENABLED=true
 In your application entry point (e.g., `backend/run_interview.py`):
 
 ```python
-from backend.logging import configure_logging, LogLevel
+from backend.structured_logging import configure_logging, LogLevel
 
 # Configure logging on startup
 configure_logging(
@@ -91,7 +91,7 @@ configure_logging(
 In your modules:
 
 ```python
-from backend.logging import get_logger
+from backend.structured_logging import get_logger
 
 logger = get_logger(__name__)
 ```
@@ -101,7 +101,7 @@ logger = get_logger(__name__)
 ### Basic Logging
 
 ```python
-from backend.logging import get_logger
+from backend.structured_logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -139,7 +139,7 @@ logger.error(
 Set session-level context once to include in all logs:
 
 ```python
-from backend.logging import set_global_context, clear_global_context
+from backend.structured_logging import set_global_context, clear_global_context
 
 # Set global context at session start
 set_global_context(session_id="abc123def456")
@@ -286,7 +286,7 @@ Set session context once at the start:
 
 ```python
 # In agent initialization
-from backend.logging import set_global_context
+from backend.structured_logging import set_global_context
 
 set_global_context(session_id=session.session_id)
 
@@ -358,7 +358,7 @@ Recommended event type naming conventions:
 pytest backend/tests/test_structured_logging.py -v
 
 # Run with coverage
-pytest backend/tests/test_structured_logging.py --cov=backend.logging -v
+pytest backend/tests/test_structured_logging.py --cov=backend.structured_logging -v
 ```
 
 ### Test Coverage
@@ -390,7 +390,7 @@ logger.error(f"LLM timeout on turn {turn_number}")
 ### After (Structured Logging)
 
 ```python
-from backend.logging import get_logger, set_global_context
+from backend.structured_logging import get_logger, set_global_context
 
 logger = get_logger(__name__)
 
@@ -428,7 +428,7 @@ configure_logging(format_mode="json")  # Not "console"
 
 **Set global context:**
 ```python
-from backend.logging import set_global_context
+from backend.structured_logging import set_global_context
 set_global_context(session_id=session_id)
 ```
 
@@ -455,7 +455,7 @@ pip install -r requirements.txt
 ```python
 """Example interview agent with structured logging."""
 
-from backend.logging import get_logger, set_global_context, configure_logging, LogLevel
+from backend.structured_logging import get_logger, set_global_context, configure_logging, LogLevel
 from backend.config import AgentConfig
 
 # Configure logging on startup

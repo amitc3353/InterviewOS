@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from backend.logging.structured_logger import (
+from backend.structured_logging.structured_logger import (
     StructuredLogger,
     LogLevel,
     StructuredFormatter,
@@ -453,8 +453,8 @@ def test_get_logger_default_format():
 # Tests — Sentry Integration
 # ---------------------------------------------------------------------------
 
-@patch("backend.logging.structured_logger.SENTRY_AVAILABLE", True)
-@patch("backend.logging.structured_logger.sentry_sdk")
+@patch("backend.structured_logging.structured_logger.SENTRY_AVAILABLE", True)
+@patch("backend.structured_logging.structured_logger.sentry_sdk")
 def test_structured_logger_sentry_error_capture(mock_sentry):
     """ERROR level logs are sent to Sentry."""
     logger = StructuredLogger("test.logger", format_mode="json")
@@ -477,8 +477,8 @@ def test_structured_logger_sentry_error_capture(mock_sentry):
     mock_sentry.capture_message.assert_called_once()
 
 
-@patch("backend.logging.structured_logger.SENTRY_AVAILABLE", True)
-@patch("backend.logging.structured_logger.sentry_sdk")
+@patch("backend.structured_logging.structured_logger.SENTRY_AVAILABLE", True)
+@patch("backend.structured_logging.structured_logger.sentry_sdk")
 def test_structured_logger_sentry_exception_capture(mock_sentry):
     """ERROR with exc_info=True captures exception in Sentry."""
     logger = StructuredLogger("test.logger", format_mode="json")
@@ -494,7 +494,7 @@ def test_structured_logger_sentry_exception_capture(mock_sentry):
     mock_sentry.capture_exception.assert_called_once()
 
 
-@patch("backend.logging.structured_logger.SENTRY_AVAILABLE", False)
+@patch("backend.structured_logging.structured_logger.SENTRY_AVAILABLE", False)
 def test_structured_logger_without_sentry():
     """Logging works when Sentry is not available."""
     logger = StructuredLogger("test.logger", format_mode="json")

@@ -2,7 +2,7 @@
 
 from typing import Dict, List, Optional
 
-from backend.logging import get_logger
+from backend.structured_logging import get_logger
 from backend.models.candidate_profile import (
     CandidatePersona,
     CandidateProfile,

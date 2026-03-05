@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Dict, List, Optional
-from backend.logging import get_logger
+from backend.structured_logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -6,7 +6,7 @@ from typing import AsyncIterator, Optional
 from livekit import rtc
 from livekit.agents import stt
 
-from ..logging import get_logger
+from ..structured_logging import get_logger
 
 logger = get_logger(__name__)
 

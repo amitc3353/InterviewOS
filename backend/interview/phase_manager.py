@@ -1,7 +1,7 @@
 """Manages interview phases and generates system prompts with INTERVIEWER_BEHAVIOR rules."""
 
 from typing import Dict, List
-from backend.logging import get_logger
+from backend.structured_logging import get_logger
 from ..models.session import InterviewPhase, SessionState, PHASE_ORDER
 
 logger = get_logger(__name__)

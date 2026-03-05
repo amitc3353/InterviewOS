@@ -16,7 +16,7 @@ config.init_logging()  # Initializes based on LOG_LEVEL and LOG_FORMAT
 ### 2. Get a Logger
 
 ```python
-from backend.logging import get_logger
+from backend.structured_logging import get_logger
 
 logger = get_logger(__name__)
 ```
@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 
 ```python
 # Set global session context
-from backend.logging import set_global_context
+from backend.structured_logging import set_global_context
 
 set_global_context(session_id=session_id)
 

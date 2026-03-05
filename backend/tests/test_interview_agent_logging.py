@@ -13,7 +13,7 @@ from livekit.agents import llm
 
 from backend.agents.interview_agent import InterviewAgent
 from backend.config import AgentConfig
-from backend.logging import get_logger, set_global_context, clear_global_context
+from backend.structured_logging import get_logger, set_global_context, clear_global_context
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ def test_agent_initialization_logging():
 @pytest.mark.asyncio
 async def test_stt_transcription_received_logging():
     """STT transcription received logs event with text length and turn number."""
-    from backend.logging.structured_logger import StructuredLogger
+    from backend.structured_logging.structured_logger import StructuredLogger
 
     # Mock logger to capture async calls
     with patch('backend.agents.interview_agent.logger') as mock_logger:

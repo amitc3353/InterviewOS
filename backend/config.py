@@ -141,7 +141,7 @@ class AgentConfig:
         """
         try:
             # Import here to avoid circular imports
-            from .logging import configure_logging, LogLevel
+            from .structured_logging import configure_logging, LogLevel
 
             # Map string level to LogLevel enum
             level_map = {
