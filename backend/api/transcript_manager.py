@@ -92,13 +92,13 @@ class TranscriptEventManager:
                     f"Subscriber queue full for session {session_id}, dropping event"
                 )
 
-    def publish_sync(self, session_id: str, event: TranscriptEvent) -> None:
+    def _publish_sync_test_only(self, session_id: str, event: TranscriptEvent) -> None:
         """
-        Synchronously publish an event to all subscribers of a session.
+        Synchronously publish event for TEST USE ONLY.
 
-        Thread-safe alternative to publish() for use from non-async contexts
-        (e.g., test code running outside the ASGI event loop). Bypasses the
-        async lock and calls put_nowait() directly.
+        WARNING: NOT thread-safe. Only use in test contexts where you control
+        timing and no concurrent subscriber modifications occur. Bypasses async
+        lock for use from non-async test code.
         """
         queues = self._subscribers.get(session_id, [])
         for queue in queues:

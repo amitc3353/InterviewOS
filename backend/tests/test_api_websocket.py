@@ -281,15 +281,15 @@ def test_get_transcript_manager_returns_singleton():
 
 
 @pytest.mark.asyncio
-async def test_manager_publish_sync():
-    """publish_sync() delivers events without async context."""
+async def test_manager_publish_sync_test_only():
+    """_publish_sync_test_only() delivers events without async context."""
     manager = TranscriptEventManager()
     queue = await manager.subscribe("session-sync")
 
     event = TranscriptEvent(
         speaker="interviewer", text="Sync publish test", phase="intro", turn_number=0
     )
-    manager.publish_sync("session-sync", event)
+    manager._publish_sync_test_only("session-sync", event)
 
     assert not queue.empty()
     received = queue.get_nowait()
@@ -297,14 +297,14 @@ async def test_manager_publish_sync():
 
 
 @pytest.mark.asyncio
-async def test_manager_publish_sync_no_subscribers():
-    """publish_sync() to session with no subscribers does not raise."""
+async def test_manager_publish_sync_test_only_no_subscribers():
+    """_publish_sync_test_only() to session with no subscribers does not raise."""
     manager = TranscriptEventManager()
     event = TranscriptEvent(
         speaker="interviewer", text="Nobody here", phase="intro", turn_number=0
     )
     # Should not raise
-    manager.publish_sync("nonexistent", event)
+    manager._publish_sync_test_only("nonexistent", event)
 
 
 # ---------------------------------------------------------------------------
@@ -396,7 +396,7 @@ def test_websocket_receives_published_events(
             turn_number=1,
             timestamp="2026-01-15T10:30:00",
         )
-        manager.publish_sync("realtime-session", event)
+        manager._publish_sync_test_only("realtime-session", event)
 
         msg = ws.receive_json()
         assert msg["speaker"] == "interviewer"
@@ -559,7 +559,7 @@ def test_websocket_reconnect_receives_events_after_rejoin(
             turn_number=0,
             timestamp="2026-01-15T11:00:00",
         )
-        manager.publish_sync("rejoin-session", event)
+        manager._publish_sync_test_only("rejoin-session", event)
 
         msg = ws.receive_json()
         assert msg["speaker"] == "interviewer"
@@ -591,7 +591,7 @@ def test_websocket_concurrent_connections_same_session(
                 turn_number=0,
                 timestamp="2026-01-15T12:00:00",
             )
-            manager.publish_sync("concurrent-session", event)
+            manager._publish_sync_test_only("concurrent-session", event)
 
             msg1 = ws1.receive_json()
             msg2 = ws2.receive_json()
@@ -645,7 +645,7 @@ def test_websocket_receives_sequential_agent_events(
             ),
         ]
         for event in events:
-            manager.publish_sync("stream-session", event)
+            manager._publish_sync_test_only("stream-session", event)
 
         received = [ws.receive_json() for _ in range(3)]
         assert received[0]["speaker"] == "candidate"
