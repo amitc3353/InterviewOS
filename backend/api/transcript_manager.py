@@ -92,6 +92,23 @@ class TranscriptEventManager:
                     f"Subscriber queue full for session {session_id}, dropping event"
                 )
 
+    def publish_sync(self, session_id: str, event: TranscriptEvent) -> None:
+        """
+        Synchronously publish an event to all subscribers of a session.
+
+        Thread-safe alternative to publish() for use from non-async contexts
+        (e.g., test code running outside the ASGI event loop). Bypasses the
+        async lock and calls put_nowait() directly.
+        """
+        queues = self._subscribers.get(session_id, [])
+        for queue in queues:
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                logger.warning(
+                    f"Subscriber queue full for session {session_id}, dropping event"
+                )
+
     def subscriber_count(self, session_id: str) -> int:
         """Return the number of active subscribers for a session."""
         return len(self._subscribers.get(session_id, []))

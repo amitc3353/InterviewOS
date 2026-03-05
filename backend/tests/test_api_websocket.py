@@ -2,6 +2,7 @@
 
 import asyncio
 import tempfile
+import time
 from unittest.mock import patch
 
 import pytest
@@ -79,6 +80,44 @@ def manager() -> TranscriptEventManager:
 def _seed_session(storage: SessionStorage, data: dict) -> None:
     """Write session data directly to storage."""
     storage.save(data)
+
+
+def _make_empty_session(session_id: str, phase: str = "intro") -> dict:
+    """Build minimal session data with no conversation history."""
+    return {
+        "session_id": session_id,
+        "scenario": "Test",
+        "phase": phase,
+        "locked_constraints": {},
+        "conversation_history": [],
+        "transcript": [],
+        "metadata": {},
+        "scorecard": None,
+        "session_start_time": "2026-01-01T00:00:00",
+        "created_at": "2026-01-01T00:00:00",
+        "elapsed_seconds": 0.0,
+        "total_turns": 0,
+        "livekit_room_name": None,
+    }
+
+
+def _make_reconnection_session_data(session_id: str, history: list) -> dict:
+    """Build minimal session data for reconnection tests."""
+    return {
+        "session_id": session_id,
+        "scenario": "Design a message queue",
+        "phase": "architecture",
+        "locked_constraints": {},
+        "conversation_history": history,
+        "transcript": [],
+        "metadata": {},
+        "scorecard": None,
+        "session_start_time": "2026-01-01T00:00:00",
+        "created_at": "2026-01-01T00:00:00",
+        "elapsed_seconds": 60.0,
+        "total_turns": len(history),
+        "livekit_room_name": None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +280,33 @@ def test_get_transcript_manager_returns_singleton():
     assert m1 is m2
 
 
+@pytest.mark.asyncio
+async def test_manager_publish_sync():
+    """publish_sync() delivers events without async context."""
+    manager = TranscriptEventManager()
+    queue = await manager.subscribe("session-sync")
+
+    event = TranscriptEvent(
+        speaker="interviewer", text="Sync publish test", phase="intro", turn_number=0
+    )
+    manager.publish_sync("session-sync", event)
+
+    assert not queue.empty()
+    received = queue.get_nowait()
+    assert received.text == "Sync publish test"
+
+
+@pytest.mark.asyncio
+async def test_manager_publish_sync_no_subscribers():
+    """publish_sync() to session with no subscribers does not raise."""
+    manager = TranscriptEventManager()
+    event = TranscriptEvent(
+        speaker="interviewer", text="Nobody here", phase="intro", turn_number=0
+    )
+    # Should not raise
+    manager.publish_sync("nonexistent", event)
+
+
 # ---------------------------------------------------------------------------
 # Tests: WebSocket endpoint — connection and history
 # ---------------------------------------------------------------------------
@@ -281,22 +347,7 @@ def test_websocket_empty_history(
     client: TestClient, storage: SessionStorage
 ):
     """WebSocket connects successfully for session with empty conversation history."""
-    data = {
-        "session_id": "empty-session",
-        "scenario": "Test",
-        "phase": "intro",
-        "locked_constraints": {},
-        "conversation_history": [],
-        "transcript": [],
-        "metadata": {},
-        "scorecard": None,
-        "session_start_time": "2026-01-01T00:00:00",
-        "created_at": "2026-01-01T00:00:00",
-        "elapsed_seconds": 0.0,
-        "total_turns": 0,
-        "livekit_room_name": None,
-    }
-    _seed_session(storage, data)
+    _seed_session(storage, _make_empty_session("empty-session"))
 
     with client.websocket_connect("/api/sessions/empty-session/transcript") as ws:
         # No history messages — next message would be a ping after timeout
@@ -330,30 +381,14 @@ def test_websocket_receives_published_events(
     client: TestClient, storage: SessionStorage
 ):
     """WebSocket receives events published via TranscriptEventManager."""
-    data = {
-        "session_id": "realtime-session",
-        "scenario": "Design a cache",
-        "phase": "architecture",
-        "locked_constraints": {},
-        "conversation_history": [],
-        "transcript": [],
-        "metadata": {},
-        "scorecard": None,
-        "session_start_time": "2026-01-01T00:00:00",
-        "created_at": "2026-01-01T00:00:00",
-        "elapsed_seconds": 0.0,
-        "total_turns": 0,
-        "livekit_room_name": None,
-    }
-    _seed_session(storage, data)
+    _seed_session(storage, _make_empty_session("realtime-session", phase="architecture"))
 
     manager = get_transcript_manager()
 
     with client.websocket_connect("/api/sessions/realtime-session/transcript") as ws:
-        # Publish an event from "outside" (simulating agent)
-        import asyncio
+        # Allow subscription to be established in the ASGI background thread
+        time.sleep(0.05)
 
-        loop = asyncio.new_event_loop()
         event = TranscriptEvent(
             speaker="interviewer",
             text="What about caching?",
@@ -361,8 +396,7 @@ def test_websocket_receives_published_events(
             turn_number=1,
             timestamp="2026-01-15T10:30:00",
         )
-        loop.run_until_complete(manager.publish("realtime-session", event))
-        loop.close()
+        manager.publish_sync("realtime-session", event)
 
         msg = ws.receive_json()
         assert msg["speaker"] == "interviewer"
@@ -380,22 +414,7 @@ def test_websocket_disconnect_cleanup(
     client: TestClient, storage: SessionStorage
 ):
     """WebSocket disconnect properly unsubscribes from event manager."""
-    data = {
-        "session_id": "disconnect-session",
-        "scenario": "Test",
-        "phase": "intro",
-        "locked_constraints": {},
-        "conversation_history": [],
-        "transcript": [],
-        "metadata": {},
-        "scorecard": None,
-        "session_start_time": "2026-01-01T00:00:00",
-        "created_at": "2026-01-01T00:00:00",
-        "elapsed_seconds": 0.0,
-        "total_turns": 0,
-        "livekit_room_name": None,
-    }
-    _seed_session(storage, data)
+    _seed_session(storage, _make_empty_session("disconnect-session"))
 
     manager = get_transcript_manager()
 
@@ -403,7 +422,6 @@ def test_websocket_disconnect_cleanup(
         assert manager.subscriber_count("disconnect-session") == 1
 
     # After context manager exits (disconnect), subscriber should be cleaned up
-    # Give a moment for cleanup
     assert manager.subscriber_count("disconnect-session") == 0
 
 
@@ -453,25 +471,6 @@ def test_history_entry_to_message_missing_fields():
 # Tests: WebSocket endpoint — reconnection handling
 # ---------------------------------------------------------------------------
 
-def _make_reconnection_session_data(session_id: str, history: list) -> dict:
-    """Build minimal session data for reconnection tests."""
-    return {
-        "session_id": session_id,
-        "scenario": "Design a message queue",
-        "phase": "architecture",
-        "locked_constraints": {},
-        "conversation_history": history,
-        "transcript": [],
-        "metadata": {},
-        "scorecard": None,
-        "session_start_time": "2026-01-01T00:00:00",
-        "created_at": "2026-01-01T00:00:00",
-        "elapsed_seconds": 60.0,
-        "total_turns": len(history),
-        "livekit_room_name": None,
-    }
-
-
 def test_websocket_reconnect_receives_full_history(
     client: TestClient, storage: SessionStorage
 ):
@@ -519,8 +518,7 @@ def test_websocket_reconnect_gets_new_subscriber(
     client: TestClient, storage: SessionStorage
 ):
     """Each reconnection creates a fresh subscriber queue."""
-    data = _make_reconnection_session_data("resub-session", [])
-    _seed_session(storage, data)
+    _seed_session(storage, _make_reconnection_session_data("resub-session", []))
 
     manager = get_transcript_manager()
 
@@ -541,8 +539,7 @@ def test_websocket_reconnect_receives_events_after_rejoin(
     client: TestClient, storage: SessionStorage
 ):
     """After reconnection, client receives new events published post-reconnect."""
-    data = _make_reconnection_session_data("rejoin-session", [])
-    _seed_session(storage, data)
+    _seed_session(storage, _make_reconnection_session_data("rejoin-session", []))
 
     manager = get_transcript_manager()
 
@@ -552,9 +549,9 @@ def test_websocket_reconnect_receives_events_after_rejoin(
 
     # Reconnect and verify new events arrive
     with client.websocket_connect("/api/sessions/rejoin-session/transcript") as ws:
-        import asyncio
+        # Allow subscription to be established
+        time.sleep(0.05)
 
-        loop = asyncio.new_event_loop()
         event = TranscriptEvent(
             speaker="interviewer",
             text="Welcome back! Let's continue.",
@@ -562,8 +559,7 @@ def test_websocket_reconnect_receives_events_after_rejoin(
             turn_number=0,
             timestamp="2026-01-15T11:00:00",
         )
-        loop.run_until_complete(manager.publish("rejoin-session", event))
-        loop.close()
+        manager.publish_sync("rejoin-session", event)
 
         msg = ws.receive_json()
         assert msg["speaker"] == "interviewer"
@@ -575,8 +571,7 @@ def test_websocket_concurrent_connections_same_session(
     client: TestClient, storage: SessionStorage
 ):
     """Multiple simultaneous WebSocket connections to same session each receive events."""
-    data = _make_reconnection_session_data("concurrent-session", [])
-    _seed_session(storage, data)
+    _seed_session(storage, _make_reconnection_session_data("concurrent-session", []))
 
     manager = get_transcript_manager()
 
@@ -586,8 +581,9 @@ def test_websocket_concurrent_connections_same_session(
         with client.websocket_connect("/api/sessions/concurrent-session/transcript") as ws2:
             assert manager.subscriber_count("concurrent-session") == 2
 
-            import asyncio
-            loop = asyncio.new_event_loop()
+            # Allow subscriptions to be established
+            time.sleep(0.05)
+
             event = TranscriptEvent(
                 speaker="candidate",
                 text="Both should see this.",
@@ -595,8 +591,7 @@ def test_websocket_concurrent_connections_same_session(
                 turn_number=0,
                 timestamp="2026-01-15T12:00:00",
             )
-            loop.run_until_complete(manager.publish("concurrent-session", event))
-            loop.close()
+            manager.publish_sync("concurrent-session", event)
 
             msg1 = ws1.receive_json()
             msg2 = ws2.receive_json()
@@ -618,15 +613,14 @@ def test_websocket_receives_sequential_agent_events(
     client: TestClient, storage: SessionStorage
 ):
     """WebSocket receives multiple events in order from simulated agent stream."""
-    data = _make_reconnection_session_data("stream-session", [])
-    _seed_session(storage, data)
+    _seed_session(storage, _make_reconnection_session_data("stream-session", []))
 
     manager = get_transcript_manager()
 
     with client.websocket_connect("/api/sessions/stream-session/transcript") as ws:
-        import asyncio
+        # Allow subscription to be established
+        time.sleep(0.05)
 
-        loop = asyncio.new_event_loop()
         events = [
             TranscriptEvent(
                 speaker="candidate",
@@ -651,8 +645,7 @@ def test_websocket_receives_sequential_agent_events(
             ),
         ]
         for event in events:
-            loop.run_until_complete(manager.publish("stream-session", event))
-        loop.close()
+            manager.publish_sync("stream-session", event)
 
         received = [ws.receive_json() for _ in range(3)]
         assert received[0]["speaker"] == "candidate"
