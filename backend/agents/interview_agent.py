@@ -20,6 +20,7 @@ from ..interview.scoring_engine import ScoringEngine
 from ..interview.sentry_context import set_interview_context, update_turn_context
 from ..interview.stt_wrapper import TimeoutSTT
 from ..interview.tts_pronunciations import normalize_for_tts as _normalize_for_tts
+from ..api.transcript_manager import TranscriptEvent, get_transcript_manager
 
 logger = get_logger(__name__)
 
@@ -164,6 +165,16 @@ class InterviewAgent(Agent):
                         user_text += content.text
                 if user_text:
                     self.interview_session.state.add_message("user", user_text)
+                    # Publish transcript event for WebSocket subscribers
+                    await get_transcript_manager().publish(
+                        self.interview_session.state.session_id,
+                        TranscriptEvent(
+                            speaker="candidate",
+                            text=user_text,
+                            phase=self.interview_session.state.phase.value,
+                            turn_number=self.interview_session.state.total_turn_count,
+                        ),
+                    )
                     await logger.info_async(
                         "STT transcription received",
                         event_type="stt_complete",
@@ -194,6 +205,16 @@ class InterviewAgent(Agent):
                 yield recovery_chunk
                 # Record recovery message in history
                 self.interview_session.state.add_message("assistant", recovery_text)
+                # Publish transcript event for WebSocket subscribers
+                await get_transcript_manager().publish(
+                    self.interview_session.state.session_id,
+                    TranscriptEvent(
+                        speaker="interviewer",
+                        text=recovery_text,
+                        phase=self.interview_session.state.phase.value,
+                        turn_number=self.interview_session.state.total_turn_count,
+                    ),
+                )
                 await logger.info_async(
                     "STT recovery message sent",
                     event_type="stt_recovery",
@@ -639,6 +660,16 @@ class InterviewAgent(Agent):
         # --- Record full turn in history ---
         if full_spoken:
             self.interview_session.state.add_message("assistant", full_spoken)
+            # Publish transcript event for WebSocket subscribers
+            await get_transcript_manager().publish(
+                self.interview_session.state.session_id,
+                TranscriptEvent(
+                    speaker="interviewer",
+                    text=full_spoken,
+                    phase=self.interview_session.state.phase.value,
+                    turn_number=self.interview_session.state.total_turn_count,
+                ),
+            )
             await logger.debug_async(
                 f"Recorded assistant turn: {full_spoken[:100]}...",
                 event_type="turn_recorded",

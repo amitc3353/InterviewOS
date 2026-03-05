@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routers.sessions import router as sessions_router
+from backend.api.routers.websocket import router as websocket_router
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
 
     # Register routers
     app.include_router(sessions_router)
+    app.include_router(websocket_router)
 
     # Health check
     @app.get("/health")
