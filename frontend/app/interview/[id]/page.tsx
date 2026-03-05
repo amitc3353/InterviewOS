@@ -14,9 +14,11 @@ import type { InterviewSession } from "@/lib/types";
 import { InterviewPhase } from "@/lib/types";
 import { api } from "@/lib/api";
 import { useLiveKit } from "@/hooks/useLiveKit";
+import { useTranscript } from "@/hooks/useTranscript";
 import VoiceControls from "@/components/VoiceControls";
 import PhaseIndicator from "@/components/PhaseIndicator";
 import Timer from "@/components/Timer";
+import TranscriptPanel from "@/components/TranscriptPanel";
 
 export default function InterviewRoom() {
   const params = useParams<{ id: string }>();
@@ -29,6 +31,9 @@ export default function InterviewRoom() {
 
   const { connectionState, isMicEnabled, toggleMic, disconnect, error: lkError } =
     useLiveKit({ sessionId });
+
+  const { events: transcriptEvents, isConnected: isTranscriptConnected } =
+    useTranscript({ sessionId });
 
   useEffect(() => {
     api
@@ -90,20 +95,14 @@ export default function InterviewRoom() {
         )}
       </aside>
 
-      {/* Right panel — transcript placeholder */}
-      <section className="flex flex-col p-6">
-        <h3 className="mb-4 text-sm font-medium uppercase tracking-wider text-gray-500">
-          Transcript
-        </h3>
-        <div
-          className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-gray-800 bg-gray-900/30"
-          data-testid="transcript-panel"
-        >
-          <p className="text-gray-600">
-            Transcript will appear here during the interview.
-          </p>
-        </div>
-      </section>
+      {/* Right panel — live transcript */}
+      <div className="flex flex-col p-6">
+        <TranscriptPanel
+          events={transcriptEvents}
+          isConnected={isTranscriptConnected}
+          lockedConstraints={session?.locked_constraints}
+        />
+      </div>
     </main>
   );
 }

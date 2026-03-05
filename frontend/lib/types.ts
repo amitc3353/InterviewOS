@@ -89,6 +89,14 @@ export interface LiveKitTokenResponse {
   url: string;
 }
 
+/** Real-time transcript event received via WebSocket */
+export interface TranscriptEvent {
+  speaker: "interviewer" | "user";
+  text: string;
+  timestamp: number;
+  phase?: InterviewPhase;
+}
+
 /** API error response */
 export interface ApiError {
   error: string;
