@@ -1,0 +1,154 @@
+name: Frontend Tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "frontend/**"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+
+defaults:
+  run:
+    working-directory: frontend
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Jest unit & integration tests with coverage enforcement
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: Jest Unit & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Jest tests with coverage
+        run: npx jest --coverage --coverageReporters=text --coverageReporters=lcov
+
+      - name: Check coverage thresholds
+        run: |
+          npx jest --coverage --coverageReporters=json-summary
+          node -e "
+            const report = require('./coverage/coverage-summary.json');
+            const totals = report.total;
+            const threshold = 80;
+            let failed = false;
+
+            if (totals.lines.pct < threshold) {
+              console.error('Line coverage ' + totals.lines.pct + '% is below threshold of ' + threshold + '%');
+              failed = true;
+            }
+            if (totals.branches.pct < threshold) {
+              console.error('Branch coverage ' + totals.branches.pct + '% is below threshold of ' + threshold + '%');
+              failed = true;
+            }
+            if (totals.functions.pct < threshold) {
+              console.error('Function coverage ' + totals.functions.pct + '% is below threshold of ' + threshold + '%');
+              failed = true;
+            }
+            if (totals.statements.pct < threshold) {
+              console.error('Statement coverage ' + totals.statements.pct + '% is below threshold of ' + threshold + '%');
+              failed = true;
+            }
+
+            if (failed) {
+              process.exit(1);
+            } else {
+              console.log('All coverage thresholds passed (>= ' + threshold + '%)');
+              console.log('Lines: ' + totals.lines.pct + '%');
+              console.log('Branches: ' + totals.branches.pct + '%');
+              console.log('Functions: ' + totals.functions.pct + '%');
+              console.log('Statements: ' + totals.statements.pct + '%');
+            }
+          "
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jest-coverage
+          path: frontend/coverage/
+
+  # ---------------------------------------------------------------------------
+  # Playwright E2E tests
+  # ---------------------------------------------------------------------------
+  e2e-tests:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build Next.js app
+        run: npm run build
+
+      - name: Run Playwright tests
+        run: npx playwright test
+        env:
+          CI: true
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+
+      - name: Upload Playwright test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-results
+          path: frontend/test-results/
+
+  # ---------------------------------------------------------------------------
+  # Build validation
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build

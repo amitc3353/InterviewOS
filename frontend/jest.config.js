@@ -19,4 +19,20 @@ module.exports = {
     "^@/(.*)$": "<rootDir>/$1",
   },
   testPathIgnorePatterns: ["/node_modules/", "/e2e/"],
+  collectCoverageFrom: [
+    "components/**/*.{ts,tsx}",
+    "hooks/**/*.{ts,tsx}",
+    "lib/**/*.{ts,tsx}",
+    "app/**/*.{ts,tsx}",
+    "!**/*.d.ts",
+    "!**/node_modules/**",
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 80,
+      functions: 80,
+      lines: 80,
+      statements: 80,
+    },
+  },
 };
