@@ -51,6 +51,39 @@ class SessionStateResponse(BaseModel):
     conversation_history: List[Dict]
 
 
+class TokenResponse(BaseModel):
+    """Response for LiveKit participant token."""
+
+    token: str
+    room_name: str
+
+
+class DimensionScoreResponse(BaseModel):
+    """Score for a single evaluation dimension."""
+
+    dimension: str
+    score: int
+    label: str
+    rationale: str
+    strengths: List[str]
+    gaps: List[str]
+
+
+class FeedbackResponse(BaseModel):
+    """Response for session feedback/scorecard."""
+
+    session_id: str
+    scenario: str
+    dimensions: Dict[str, DimensionScoreResponse]
+    overall_score: float
+    hire_signal: str
+    narrative: str
+    locked_constraints: Dict[str, str]
+    total_turns: int
+    elapsed_minutes: float
+    generated_at: str
+
+
 class ErrorResponse(BaseModel):
     """Standard error response."""
 

@@ -1,6 +1,8 @@
 """Session management endpoints."""
 
+import json
 import logging
+import os
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -9,9 +11,11 @@ from fastapi import APIRouter, HTTPException
 
 from backend.api.models import (
     CreateSessionRequest,
+    FeedbackResponse,
     SessionListResponse,
     SessionResponse,
     SessionStateResponse,
+    TokenResponse,
 )
 from backend.api.storage import SessionStorage
 
@@ -22,10 +26,24 @@ router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 # Module-level storage instance — can be overridden for testing
 _storage = SessionStorage()
 
+# Default scorecards directory
+_SCORECARDS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)
+    )))),
+    "data",
+    "scorecards",
+)
+
 
 def _get_storage() -> SessionStorage:
     """Return the current storage instance."""
     return _storage
+
+
+def _get_scorecards_dir() -> str:
+    """Return the path to the scorecards directory."""
+    return _SCORECARDS_DIR
 
 
 def _create_livekit_room(room_name: str) -> Optional[str]:
@@ -149,3 +167,87 @@ def get_session_state(session_id: str) -> SessionStateResponse:
         elapsed_seconds=data.get("elapsed_seconds", 0.0),
         conversation_history=data.get("conversation_history", []),
     )
+
+
+@router.get("/{session_id}/token", response_model=TokenResponse)
+def get_session_token(session_id: str) -> TokenResponse:
+    """
+    Generate a LiveKit participant token for the session.
+
+    Returns a JWT with room join and publish permissions.
+    """
+    storage = _get_storage()
+    try:
+        data = storage.load(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+    room_name = data.get("livekit_room_name")
+    if not room_name:
+        raise HTTPException(status_code=400, detail="Session has no LiveKit room")
+
+    api_key = os.getenv("LIVEKIT_API_KEY", "")
+    api_secret = os.getenv("LIVEKIT_API_SECRET", "")
+
+    if not api_key or not api_secret:
+        raise HTTPException(
+            status_code=500, detail="LiveKit credentials not configured"
+        )
+
+    try:
+        from livekit.api import AccessToken, VideoGrants
+
+        token = AccessToken(api_key=api_key, api_secret=api_secret)
+        token.with_identity(f"participant-{session_id[:8]}")
+        token.with_grants(VideoGrants(
+            room_join=True,
+            room=room_name,
+            can_publish=True,
+            can_subscribe=True,
+        ))
+        jwt_str = token.to_jwt()
+    except ImportError:
+        raise HTTPException(
+            status_code=500, detail="livekit package not installed"
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate token: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate token")
+
+    return TokenResponse(token=jwt_str, room_name=room_name)
+
+
+@router.get("/{session_id}/feedback", response_model=FeedbackResponse)
+def get_session_feedback(session_id: str) -> FeedbackResponse:
+    """
+    Get post-interview feedback scorecard for the session.
+
+    Reads and parses data/scorecards/{session_id}.json.
+    """
+    # Validate session ID format via storage path check
+    storage = _get_storage()
+    try:
+        storage._session_path(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    scorecard_path = os.path.join(_get_scorecards_dir(), f"{session_id}.json")
+
+    if not os.path.exists(scorecard_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Feedback not found for session {session_id}",
+        )
+
+    try:
+        with open(scorecard_path, "r") as f:
+            scorecard_data = json.load(f)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail="Invalid scorecard data")
+    except Exception as e:
+        logger.error(f"Failed to read scorecard: {e}")
+        raise HTTPException(status_code=500, detail="Failed to read scorecard")
+
+    return FeedbackResponse(**scorecard_data)
