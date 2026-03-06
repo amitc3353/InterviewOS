@@ -1021,7 +1021,7 @@ async def entrypoint(ctx: JobContext):
                 archetype=scenario_metadata.archetype,
             )
 
-        except (json.JSONDecodeError, Exception) as e:
+        except Exception as e:
             # Fallback: treat as literal scenario text for backward compatibility
             await logger.warning_async(
                 f"Failed to parse job metadata as JSON, using as literal text: {e}",

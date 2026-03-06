@@ -85,18 +85,51 @@ class AgentConfig:
             log_format=os.getenv("LOG_FORMAT", "console").lower(),
         )
     
+    # Common placeholder values that indicate keys haven't been configured
+    _PLACEHOLDER_PATTERNS = (
+        "your_",
+        "sk-xxx",
+        "key_here",
+        "replace_me",
+        "todo",
+        "changeme",
+        "placeholder",
+    )
+
     def validate(self) -> bool:
-        """Validate that all required fields are set."""
-        required_fields = [
-            self.livekit_url,
-            self.livekit_api_key,
-            self.livekit_api_secret,
-            self.deepgram_api_key,
-            self.anthropic_api_key,
-            self.openai_api_key,
-            self.cartesia_api_key,
-        ]
-        return all(required_fields)
+        """Validate that all required fields are set and not placeholder values."""
+        required_keys = {
+            "livekit_url": self.livekit_url,
+            "livekit_api_key": self.livekit_api_key,
+            "livekit_api_secret": self.livekit_api_secret,
+            "deepgram_api_key": self.deepgram_api_key,
+            "anthropic_api_key": self.anthropic_api_key,
+            "openai_api_key": self.openai_api_key,
+            "cartesia_api_key": self.cartesia_api_key,
+        }
+
+        for name, value in required_keys.items():
+            if not value:
+                logger.error(f"Missing required config: {name}")
+                return False
+            if self._is_placeholder(value):
+                logger.error(f"Config '{name}' appears to be a placeholder value")
+                return False
+
+        return True
+
+    @staticmethod
+    def _is_placeholder(value: str) -> bool:
+        """Check if a value looks like a placeholder that hasn't been configured."""
+        value_lower = value.lower()
+        return any(p in value_lower for p in AgentConfig._PLACEHOLDER_PATTERNS)
+
+    @staticmethod
+    def mask_secret(value: str) -> str:
+        """Mask a secret value for safe logging, showing only last 4 chars."""
+        if not value or len(value) <= 4:
+            return "****"
+        return f"****{value[-4:]}"
 
     def init_sentry(self) -> bool:
         """

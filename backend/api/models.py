@@ -2,7 +2,12 @@
 
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from backend.interview.input_validation import (
+    sanitize_candidate_name,
+    sanitize_scenario_name,
+)
 
 
 class CreateSessionRequest(BaseModel):
@@ -12,11 +17,25 @@ class CreateSessionRequest(BaseModel):
         ...,
         description="Interview scenario (e.g., 'Design a URL shortener')",
         min_length=1,
+        max_length=200,
     )
     candidate_name: Optional[str] = Field(
         default=None,
         description="Optional candidate name for the session",
+        max_length=100,
     )
+
+    @field_validator("scenario")
+    @classmethod
+    def validate_scenario(cls, v: str) -> str:
+        """Sanitize scenario name to prevent injection/traversal attacks."""
+        return sanitize_scenario_name(v)
+
+    @field_validator("candidate_name")
+    @classmethod
+    def validate_candidate_name(cls, v: Optional[str]) -> Optional[str]:
+        """Sanitize candidate name."""
+        return sanitize_candidate_name(v)
 
 
 class SessionResponse(BaseModel):

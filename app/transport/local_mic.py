@@ -1,11 +1,16 @@
 """Local microphone transport - Phase 1 implementation."""
 
+import logging
+
 import sounddevice as sd
 import numpy as np
 from pynput import keyboard
+
 from app.transport.base import Transport
 from app.engine import InterviewEngine
 from app.adapters import STTAdapter, LLMAdapter, TTSAdapter, AudioOutAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class LocalMicTransport(Transport):
@@ -93,7 +98,7 @@ class LocalMicTransport(Transport):
                 self.listener.stop()
                 return False
         except Exception as e:
-            print(f"Error: {e}")
+            logger.error("Key press handler error: %s", e, exc_info=True)
 
     def _on_key_release(self, key):
         """Handle key release events."""
@@ -101,7 +106,7 @@ class LocalMicTransport(Transport):
             if key == keyboard.Key.space and self.is_recording:
                 self._stop_recording()
         except Exception as e:
-            print(f"Error: {e}")
+            logger.error("Key release handler error: %s", e, exc_info=True)
 
     def _start_recording(self):
         """Start recording audio."""
@@ -118,14 +123,14 @@ class LocalMicTransport(Transport):
         try:
             self.stt.start_listening()
         except Exception as e:
-            print(f"❌ STT connection failed: {e}")
+            logger.error("STT connection failed: %s", e, exc_info=True)
             self.is_recording = False
             return
 
         # Start audio stream
         def audio_callback(indata, frames, time, status):
             if status:
-                print(f"⚠️  Audio status: {status}")
+                logger.warning("Audio status: %s", status)
 
             # Apply gain boost to compensate for quiet Mac mic signal
             boosted = np.clip(indata * 6.0, -1.0, 1.0)
@@ -153,7 +158,7 @@ class LocalMicTransport(Transport):
                 self.stream.stop()
                 self.stream.close()
         except Exception as e:
-            print(f"⚠️  Stream cleanup warning: {e}")
+            logger.warning("Stream cleanup warning: %s", e)
         finally:
             self.stream = None
 
@@ -163,7 +168,7 @@ class LocalMicTransport(Transport):
         try:
             transcript = self.stt.stop_listening()
         except Exception as e:
-            print(f"❌ STT error: {e}")
+            logger.error("STT error: %s", e, exc_info=True)
             return
 
         if not transcript.strip():
@@ -180,8 +185,6 @@ class LocalMicTransport(Transport):
         """Handle partial transcript for live feedback."""
         if text != self.current_partial:
             self.current_partial = text
-            # Could print live transcript here if desired
-            # print(f"\r{text}", end="", flush=True)
 
     def _process_turn(self, transcript: str):
         """Process candidate's response and get next question."""
@@ -231,7 +234,7 @@ class LocalMicTransport(Transport):
         try:
             self.audio_out.stop()
         except Exception as e:
-            print(f"⚠️  Audio stop warning: {e}")
+            logger.warning("Audio stop warning: %s", e)
 
         # Stop mic stream
         try:
@@ -239,7 +242,7 @@ class LocalMicTransport(Transport):
                 self.stream.stop()
                 self.stream.close()
         except Exception as e:
-            print(f"⚠️  Stream cleanup warning: {e}")
+            logger.warning("Stream cleanup warning: %s", e)
         finally:
             self.stream = None
 
@@ -248,6 +251,6 @@ class LocalMicTransport(Transport):
             if self.listener:
                 self.listener.stop()
         except Exception as e:
-            print(f"⚠️  Listener cleanup warning: {e}")
+            logger.warning("Listener cleanup warning: %s", e)
         finally:
             self.listener = None
