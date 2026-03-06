@@ -35,7 +35,7 @@ def main():
     config.init_sentry()
 
     logger.info("=" * 80)
-    logger.info(f"Starting InterviewOS Agent")
+    logger.info("Starting InterviewOS Agent")
     logger.info(f"LiveKit URL: {config.livekit_url}")
     logger.info(f"LLM Model: {config.llm_model}")
     logger.info(f"TTS Provider: {config.tts_provider}")
@@ -43,6 +43,9 @@ def main():
     logger.info(f"VAD Sensitivity: {config.vad_sensitivity}")
     logger.info(f"Silence Threshold: {config.silence_threshold_ms}ms")
     logger.info(f"Semantic Turn Detection: {config.use_semantic_turn_detection}")
+    logger.info(f"API Keys: Deepgram={AgentConfig.mask_secret(config.deepgram_api_key)}, "
+                f"Anthropic={AgentConfig.mask_secret(config.anthropic_api_key)}, "
+                f"Cartesia={AgentConfig.mask_secret(config.cartesia_api_key)}")
     logger.info("=" * 80)
     logger.info("Note: Scenario is passed via LiveKit room metadata when creating the room")
     

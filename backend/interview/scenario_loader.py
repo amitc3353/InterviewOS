@@ -8,6 +8,7 @@ from typing import Dict, List
 import yaml
 
 from ..structured_logging import get_logger
+from .input_validation import validate_path_within_directory, validate_scenario_id
 
 logger = get_logger(__name__)
 
@@ -99,7 +100,7 @@ class ScenarioLoader:
         self._scenarios: Dict[str, ScenarioMetadata] = {}
         self._load_all_scenarios()
 
-    def _load_all_scenarios(self):
+    def _load_all_scenarios(self) -> None:
         """Load all YAML files from scenarios directory."""
         if not self.scenarios_dir.exists():
             logger.warning(f"Scenarios directory not found: {self.scenarios_dir}")
@@ -107,6 +108,8 @@ class ScenarioLoader:
 
         for yaml_file in self.scenarios_dir.glob("*.yaml"):
             try:
+                # Validate file is within the scenarios directory
+                validate_path_within_directory(yaml_file, self.scenarios_dir)
                 scenario = ScenarioMetadata.from_yaml(yaml_file)
                 self._scenarios[scenario.id] = scenario
                 logger.info(f"Loaded scenario: {scenario.id} ({scenario.name})")
@@ -125,9 +128,12 @@ class ScenarioLoader:
             ScenarioMetadata object
 
         Raises:
-            ValueError: If no scenarios are loaded
+            ValueError: If no scenarios are loaded or scenario_id is invalid
             ScenarioNotFoundError: If scenario_id not found
         """
+        # Validate scenario ID format to prevent injection/traversal
+        scenario_id = validate_scenario_id(scenario_id)
+
         if not self._scenarios:
             raise ValueError("No scenarios loaded")
 

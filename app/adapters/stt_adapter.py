@@ -1,11 +1,13 @@
 """STT Adapter - Streaming speech-to-text via Deepgram."""
 
-import queue
+import logging
 import threading
 import time
 from typing import Callable, Optional
 from deepgram import DeepgramClient, LiveTranscriptionEvents, LiveOptions
 from app.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class STTAdapter:
