@@ -1,5 +1,6 @@
 """Interview session data models."""
 
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -88,10 +89,68 @@ class SessionState:
                 phase=self.phase.value,
                 message_length=len(content)
             )
+
+        # Log memory profile every 10 messages to monitor session growth
+        if len(self.conversation_history) % 10 == 0:
+            self.log_memory_profile()
     
     def get_recent_history(self, window_size: int = 5) -> List[Message]:
         """Get last N messages for LLM context."""
         return self.conversation_history[-window_size:]
+
+    def get_memory_stats(self) -> Dict:
+        """
+        Calculate memory usage stats for the conversation history.
+
+        Returns:
+            Dict with message_count, total_chars, estimated_bytes, and avg_message_chars.
+        """
+        message_count = len(self.conversation_history)
+        total_chars = sum(len(msg.content) for msg in self.conversation_history)
+        # Rough estimate: each char ~= 1 byte in ASCII, ~4 bytes per char in Python str
+        estimated_bytes = sum(sys.getsizeof(msg.content) for msg in self.conversation_history)
+        avg_chars = total_chars / message_count if message_count > 0 else 0
+
+        return {
+            "message_count": message_count,
+            "total_chars": total_chars,
+            "estimated_bytes": estimated_bytes,
+            "avg_message_chars": round(avg_chars, 1),
+        }
+
+    def log_memory_profile(self) -> None:
+        """Log conversation history memory stats for monitoring session growth."""
+        stats = self.get_memory_stats()
+        estimated_mb = stats["estimated_bytes"] / (1024 * 1024)
+
+        # Log at appropriate level based on memory usage
+        if estimated_mb > 50:
+            logger.warning(
+                f"High memory usage: conversation history at {estimated_mb:.1f}MB "
+                f"({stats['message_count']} messages, {stats['total_chars']} chars)",
+                event_type="memory_profile",
+                session_id=self.session_id,
+                turn_number=self.total_turn_count,
+                message_count=stats["message_count"],
+                total_chars=stats["total_chars"],
+                estimated_bytes=stats["estimated_bytes"],
+                estimated_mb=round(estimated_mb, 2),
+                avg_message_chars=stats["avg_message_chars"],
+                level="warning",
+            )
+        else:
+            logger.debug(
+                f"Memory profile: {stats['message_count']} messages, "
+                f"{stats['total_chars']} chars, ~{estimated_mb:.2f}MB",
+                event_type="memory_profile",
+                session_id=self.session_id,
+                turn_number=self.total_turn_count,
+                message_count=stats["message_count"],
+                total_chars=stats["total_chars"],
+                estimated_bytes=stats["estimated_bytes"],
+                estimated_mb=round(estimated_mb, 2),
+                avg_message_chars=stats["avg_message_chars"],
+            )
     
     def advance_phase(self, new_phase: InterviewPhase) -> bool:
         """

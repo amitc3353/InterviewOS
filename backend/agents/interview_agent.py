@@ -293,6 +293,7 @@ class InterviewAgent(Agent):
         # System messages (static prompt + dynamic context + locked_constraints) are always kept.
         # This prevents hitting the token limit mid-session.
         MAX_HISTORY_MESSAGES = 18  # 9 turns (user + assistant pairs)
+        MAX_CHAT_CTX_ITEMS = 50   # Hard cap on total items to prevent unbounded growth
         system_items = [
             item for item in chat_ctx.items
             if hasattr(item, 'role') and item.role == "system"
@@ -301,7 +302,23 @@ class InterviewAgent(Agent):
             item for item in chat_ctx.items
             if not (hasattr(item, 'role') and item.role == "system")
         ]
-        if len(non_system_items) > MAX_HISTORY_MESSAGES:
+
+        # Hard cap: if total items exceed absolute limit, aggressively trim
+        if len(chat_ctx.items) > MAX_CHAT_CTX_ITEMS:
+            keep_count = min(MAX_HISTORY_MESSAGES, MAX_CHAT_CTX_ITEMS - len(system_items))
+            trimmed_count = len(non_system_items) - keep_count
+            non_system_items = non_system_items[-keep_count:]
+            chat_ctx.items = system_items + non_system_items
+            await logger.warning_async(
+                f"Buffer overflow prevention: hard cap triggered, "
+                f"removed {trimmed_count} items (total was {len(system_items) + len(non_system_items) + trimmed_count})",
+                event_type="context_hard_cap",
+                turn_number=self.interview_session.state.total_turn_count,
+                trimmed_count=trimmed_count,
+                total_items_before=len(system_items) + len(non_system_items) + trimmed_count,
+                total_items_after=len(chat_ctx.items),
+            )
+        elif len(non_system_items) > MAX_HISTORY_MESSAGES:
             trimmed_count = len(non_system_items) - MAX_HISTORY_MESSAGES
             non_system_items = non_system_items[-MAX_HISTORY_MESSAGES:]
             chat_ctx.items = system_items + non_system_items
@@ -311,6 +328,23 @@ class InterviewAgent(Agent):
                 turn_number=self.interview_session.state.total_turn_count,
                 trimmed_count=trimmed_count,
                 kept_count=MAX_HISTORY_MESSAGES,
+            )
+
+        # --- Memory profiling: log session memory stats periodically ---
+        if self.interview_session.state.total_turn_count % 5 == 0 and self.interview_session.state.total_turn_count > 0:
+            mem_stats = self.interview_session.state.get_memory_stats()
+            elapsed_min = self.interview_session.state.elapsed_seconds() / 60
+            await logger.info_async(
+                f"Session memory: {mem_stats['message_count']} messages, "
+                f"{mem_stats['total_chars']} chars, ~{mem_stats['estimated_bytes'] / 1024:.1f}KB "
+                f"at {elapsed_min:.0f}min",
+                event_type="session_memory_profile",
+                turn_number=self.interview_session.state.total_turn_count,
+                message_count=mem_stats["message_count"],
+                total_chars=mem_stats["total_chars"],
+                estimated_bytes=mem_stats["estimated_bytes"],
+                chat_ctx_items=len(chat_ctx.items),
+                elapsed_minutes=round(elapsed_min, 1),
             )
 
         # --- Streaming-safe retry with timeout, rate limit, and graceful degradation ---
