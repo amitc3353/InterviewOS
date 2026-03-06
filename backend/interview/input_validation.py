@@ -98,6 +98,10 @@ def sanitize_candidate_name(name: Optional[str]) -> Optional[str]:
             "Only letters, numbers, spaces, hyphens, apostrophes, and periods are allowed."
         )
 
+    # Reject path traversal patterns even if they match the regex
+    if _contains_path_traversal(name):
+        raise ValueError("Candidate name contains path traversal characters")
+
     return name
 
 

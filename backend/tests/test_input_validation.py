@@ -129,6 +129,12 @@ def test_candidate_name_special_chars_rejected():
         sanitize_candidate_name("<script>alert(1)</script>")
 
 
+def test_candidate_name_path_traversal_rejected():
+    """Candidate name with '..' is rejected."""
+    with pytest.raises(ValueError, match="path traversal|invalid characters"):
+        sanitize_candidate_name("Dr..")
+
+
 # ---------------------------------------------------------------------------
 # Tests: validate_scenario_id
 # ---------------------------------------------------------------------------
