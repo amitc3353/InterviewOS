@@ -195,10 +195,9 @@ def test_phase_turn_count_resets_on_transition():
     # Transition to ARCHITECTURE
     _simulate_turn(state, "Let's move on", "[PHASE:architecture][Q:Architecture?]")
 
-    # User message incremented before transition, then reset by advance_phase,
-    # but the user message for this turn already incremented it before advance
-    # Actually: add_message increments first, then advance_phase resets to 0
-    assert state.phase_turn_count == 0  # Reset by advance_phase
+    # Flow: add_message("user") increments to 3, advance_phase resets to 0,
+    # add_message("assistant") does not increment (only user messages do).
+    assert state.phase_turn_count == 0
     assert state.total_turn_count == 3  # Total keeps going
 
 
