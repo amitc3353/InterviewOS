@@ -74,6 +74,21 @@ PRONUNCIATIONS = {
     'CQRS':         'C Q R S',
     'UUID':         'U U I D',
     'LRU':          'L R U',
+
+    # System design concepts
+    'sharding':     'sharr-ding',        # explicit syllable break for TTS clarity
+    'sharded':      'sharr-ded',
+    'idempotency':  'eye-dem-PO-ten-see',  # stress on third syllable
+    'idempotent':   'eye-dem-PO-tent',
+    'ACID':         'A C I D',           # spelled out as letters in DB context
+    'CAP':          'C A P',             # CAP theorem — spelled out as letters
+    'eventual consistency': 'eventual con-SIS-ten-see',  # stress on second syllable of consistency
+
+    # Distributed systems
+    'Kafka':        'KAF-kuh',           # common spoken form
+    'Zookeeper':    'Zoo keeper',        # space for natural TTS
+    'Elasticsearch':'Elastic search',    # space for natural TTS
+    'Cassandra':    'Kuh-SAN-druh',      # stress on second syllable
 }
 
 

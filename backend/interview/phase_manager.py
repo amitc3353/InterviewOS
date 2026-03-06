@@ -223,15 +223,67 @@ Asking 3 shallow questions is worse than asking 1 deep question.
         # NOTE: recent history is intentionally omitted here — the full conversation is
         # already in chat_ctx (LiveKit-managed). Sending it again would double-count tokens.
 
+        # Build per-turn behavioral guardrails based on current state
+        guardrails = self._get_turn_guardrails(state)
+
         return f"""**CURRENT PHASE**: {state.phase.value}
 **PHASE TURN COUNT**: {state.phase_turn_count}
 **TOTAL TURNS**: {state.total_turn_count}
 **SESSION ELAPSED**: {int(state.elapsed_seconds() / 60)} minutes
 **PHASE ELAPSED**: {int(state.phase_elapsed_seconds() / 60)} minutes
 
+{guardrails}
+
 {phase_instructions}
 
 {locked_constraints}"""
+
+    def _get_turn_guardrails(self, state: SessionState) -> str:
+        """
+        Build per-turn behavioral guardrails injected into dynamic context.
+
+        Reinforces anti-patterns that the LLM tends to slip into over long sessions:
+        verbosity, multi-question turns, and excessive praise. These short reminders
+        complement the static rules and become more aggressive as the session progresses.
+        """
+        guardrails: List[str] = []
+
+        # Always: word limit reminder (LLM drifts verbose over long conversations)
+        guardrails.append(
+            "**WORD CHECK**: Your response MUST be under 60 words. "
+            "Target 30 words. Count before sending."
+        )
+
+        # Always: single question enforcement
+        guardrails.append(
+            "**ONE QUESTION ONLY**: Count question marks — if more than ONE, "
+            "delete all but the first. No compound questions."
+        )
+
+        # Always: praise ban reminder (LLM tends to slip praise after many turns)
+        guardrails.append(
+            '**ZERO PRAISE**: No "Great", "Excellent", "Perfect", "Good", '
+            '"Nice", "Awesome", "Exactly", "Brilliant". '
+            'Use neutral: "Got it.", "Okay.", "Hmm.", "Right.", or skip ACK entirely.'
+        )
+
+        # After 10+ turns: extra verbosity pressure
+        if state.total_turn_count >= 10:
+            guardrails.append(
+                "**BREVITY ALERT**: You are {turns} turns in. "
+                "Keep responses SHORT. One sentence is ideal.".format(
+                    turns=state.total_turn_count
+                )
+            )
+
+        # Silence rule: remind if 7+ turns since last silence-only turn
+        if state.phase_turn_count > 0 and state.phase_turn_count % 7 == 0:
+            guardrails.append(
+                "**SILENCE RULE**: It has been 7+ turns. "
+                'Your response MUST be a "just react" turn: [ACK:Hmm.] with NO [Q:].'
+            )
+
+        return "\n".join(guardrails)
 
     def get_system_prompt(self, state: SessionState) -> str:
         """Generate complete system prompt with all INTERVIEWER_BEHAVIOR rules."""
