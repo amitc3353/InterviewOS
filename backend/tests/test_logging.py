@@ -609,14 +609,31 @@ def test_stdlib_logging_not_shadowed():
     Regression test: a leftover backend/logging/ directory (even with only
     __pycache__) can shadow Python's stdlib logging module, causing circular
     import errors. This test verifies the stdlib module resolves correctly.
-    """
-    import logging as stdlib_logging
 
-    # stdlib logging should come from the standard library, not from backend/
-    assert hasattr(stdlib_logging, "getLogger"), "stdlib logging is shadowed"
-    assert "backend" not in (stdlib_logging.__file__ or ""), (
-        f"stdlib logging resolves to backend path: {stdlib_logging.__file__}"
-    )
+    Uses importlib to safely attempt the import so the test produces a clear
+    assertion failure instead of an ImportError if the bug is re-introduced.
+    """
+    import importlib
+    import sys
+
+    # Force a fresh import to detect shadowing even if logging was cached
+    cached = sys.modules.pop("logging", None)
+    try:
+        stdlib_logging = importlib.import_module("logging")
+        # stdlib logging should come from the standard library, not from backend/
+        assert hasattr(stdlib_logging, "getLogger"), "stdlib logging is shadowed"
+        assert "backend" not in (stdlib_logging.__file__ or ""), (
+            f"stdlib logging resolves to backend path: {stdlib_logging.__file__}"
+        )
+    except ImportError as exc:
+        pytest.fail(
+            f"Importing stdlib 'logging' raised ImportError — likely shadowed "
+            f"by backend/logging/ directory: {exc}"
+        )
+    finally:
+        # Restore the cached module so other tests are unaffected
+        if cached is not None:
+            sys.modules["logging"] = cached
 
 
 def test_no_backend_logging_package_exists():
@@ -632,11 +649,11 @@ def test_no_backend_logging_package_exists():
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     logging_dir = os.path.join(backend_dir, "logging")
 
-    # The backend/logging/ directory should not exist
-    has_init = os.path.exists(os.path.join(logging_dir, "__init__.py"))
-    assert not has_init, (
-        f"backend/logging/__init__.py exists — this shadows stdlib logging. "
-        f"Rename to backend/structured_logging/"
+    # The backend/logging/ directory should not exist at all — even a directory
+    # with only __pycache__ can shadow Python's stdlib logging module
+    assert not os.path.exists(logging_dir), (
+        f"backend/logging/ directory exists — this shadows stdlib logging. "
+        f"Remove it or rename to backend/structured_logging/"
     )
 
 
