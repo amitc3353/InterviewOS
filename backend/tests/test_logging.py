@@ -596,3 +596,93 @@ def test_configure_logging_multiple_times():
     # Should not raise exception
     logger = get_logger("test.config")
     assert logger is not None
+
+
+# ---------------------------------------------------------------------------
+# Tests — Import Conflict Prevention (stdlib logging vs backend.logging)
+# ---------------------------------------------------------------------------
+
+
+def test_stdlib_logging_not_shadowed():
+    """stdlib 'logging' module must not be shadowed by backend.logging directory.
+
+    Regression test: a leftover backend/logging/ directory (even with only
+    __pycache__) can shadow Python's stdlib logging module, causing circular
+    import errors. This test verifies the stdlib module resolves correctly.
+
+    Uses importlib to safely attempt the import so the test produces a clear
+    assertion failure instead of an ImportError if the bug is re-introduced.
+    """
+    import importlib
+    import sys
+
+    # Force a fresh import to detect shadowing even if logging was cached
+    cached = sys.modules.pop("logging", None)
+    try:
+        stdlib_logging = importlib.import_module("logging")
+        # stdlib logging should come from the standard library, not from backend/
+        assert hasattr(stdlib_logging, "getLogger"), "stdlib logging is shadowed"
+        assert "backend" not in (stdlib_logging.__file__ or ""), (
+            f"stdlib logging resolves to backend path: {stdlib_logging.__file__}"
+        )
+    except ImportError as exc:
+        pytest.fail(
+            f"Importing stdlib 'logging' raised ImportError — likely shadowed "
+            f"by backend/logging/ directory: {exc}"
+        )
+    finally:
+        # Restore the cached module so other tests are unaffected
+        if cached is not None:
+            sys.modules["logging"] = cached
+
+
+def test_no_backend_logging_package_exists():
+    """Verify backend.logging is not importable as a package.
+
+    The old backend/logging/ directory was renamed to backend/structured_logging/.
+    This test ensures no leftover backend/logging/ package exists that could
+    shadow Python's stdlib logging module.
+    """
+    import importlib
+    import os
+
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    logging_dir = os.path.join(backend_dir, "logging")
+
+    # The backend/logging/ directory should not exist at all — even a directory
+    # with only __pycache__ can shadow Python's stdlib logging module
+    assert not os.path.exists(logging_dir), (
+        f"backend/logging/ directory exists — this shadows stdlib logging. "
+        f"Remove it or rename to backend/structured_logging/"
+    )
+
+
+def test_structured_logging_import_works():
+    """Verify backend.structured_logging imports correctly."""
+    from backend.structured_logging import (
+        StructuredLogger,
+        LogLevel,
+        get_logger,
+        configure_logging,
+        set_global_context,
+        clear_global_context,
+    )
+
+    # All exports should be importable
+    assert StructuredLogger is not None
+    assert LogLevel is not None
+    assert get_logger is not None
+    assert configure_logging is not None
+    assert set_global_context is not None
+    assert clear_global_context is not None
+
+
+def test_get_logger_returns_structured_logger():
+    """get_logger() returns a StructuredLogger that uses stdlib logging internally."""
+    import logging  # noqa: F811 — defensive import in case module-level is shadowed
+
+    logger = get_logger("test.import_check")
+
+    assert isinstance(logger, StructuredLogger)
+    # The internal logger should be a stdlib logging.Logger
+    assert isinstance(logger.logger, logging.Logger)

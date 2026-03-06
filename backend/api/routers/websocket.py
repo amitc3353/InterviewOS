@@ -2,15 +2,15 @@
 
 import asyncio
 import json
-import logging
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from backend.api.storage import SessionStorage
 from backend.api.transcript_manager import TranscriptEvent, get_transcript_manager
+from backend.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/sessions", tags=["websocket"])
 

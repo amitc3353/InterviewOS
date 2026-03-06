@@ -1,15 +1,14 @@
 """FastAPI application with CORS middleware and health check."""
 
-import logging
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.api.routers.sessions import router as sessions_router
 from backend.api.routers.websocket import router as websocket_router
 from backend.api.tokens import router as tokens_router
+from backend.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def create_app() -> FastAPI:

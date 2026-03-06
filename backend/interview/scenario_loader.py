@@ -1,6 +1,5 @@
 """Load and manage interview scenarios from YAML files."""
 
-import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +7,9 @@ from typing import Dict, List
 
 import yaml
 
-logger = logging.getLogger(__name__)
+from ..structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class ScenarioNotFoundError(Exception):

@@ -1,7 +1,6 @@
 """Interview agent using LiveKit Agents 1.0 API with custom nodes."""
 
 import asyncio
-import logging
 import time
 import uuid
 from typing import AsyncIterable, Optional

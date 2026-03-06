@@ -1,11 +1,12 @@
 """Async pub/sub manager for real-time transcript events."""
 
 import asyncio
-import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from backend.structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class TranscriptEvent:

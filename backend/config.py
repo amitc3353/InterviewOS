@@ -1,6 +1,5 @@
 """Configuration for InterviewOS agents."""
 
-import logging
 import os
 from dataclasses import dataclass, field
 from typing import Optional
@@ -11,7 +10,9 @@ try:
 except ImportError:
     SENTRY_AVAILABLE = False
 
-logger = logging.getLogger(__name__)
+from .structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 @dataclass
 class AgentConfig:

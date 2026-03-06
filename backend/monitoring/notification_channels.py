@@ -4,13 +4,14 @@ Manages notification channels (Discord, email, webhook) and routes
 alerts to the appropriate channels based on severity and configuration.
 """
 
-import logging
 import os
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from backend.structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class ChannelType(Enum):

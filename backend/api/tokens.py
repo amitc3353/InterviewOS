@@ -1,14 +1,14 @@
 """LiveKit token generation endpoint."""
 
-import logging
 import os
 
 from fastapi import APIRouter, HTTPException
 
 from backend.api.models import TokenResponse
 from backend.api.storage import SessionStorage
+from backend.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/sessions", tags=["tokens"])
 

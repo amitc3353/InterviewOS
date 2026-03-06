@@ -1,13 +1,13 @@
 """Sentry context management for interview sessions."""
 
-import logging
 from typing import Dict, Optional
 
 import sentry_sdk
 
 from ..models.session import SessionState
+from ..structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def set_interview_context(session_id: str, state: Optional[SessionState] = None) -> None:

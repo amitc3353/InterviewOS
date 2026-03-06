@@ -16,7 +16,6 @@ Configure GlitchTip to send webhooks to this endpoint.
 """
 
 import json
-import logging
 import os
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -25,12 +24,9 @@ from typing import Any, Dict, Optional
 import requests
 from dotenv import load_dotenv
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+from backend.structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 # Load environment variables
 load_dotenv()
