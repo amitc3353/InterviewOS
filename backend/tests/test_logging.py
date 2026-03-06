@@ -679,6 +679,8 @@ def test_structured_logging_import_works():
 
 def test_get_logger_returns_structured_logger():
     """get_logger() returns a StructuredLogger that uses stdlib logging internally."""
+    import logging  # noqa: F811 — defensive import in case module-level is shadowed
+
     logger = get_logger("test.import_check")
 
     assert isinstance(logger, StructuredLogger)
