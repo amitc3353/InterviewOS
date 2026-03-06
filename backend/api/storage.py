@@ -1,13 +1,14 @@
 """JSON filesystem storage for interview sessions."""
 
 import json
-import logging
 import os
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from backend.structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 # Default storage directory
 DEFAULT_STORAGE_DIR = os.path.join(

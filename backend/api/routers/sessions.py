@@ -1,7 +1,6 @@
 """Session management endpoints."""
 
 import json
-import logging
 import os
 import uuid
 from datetime import datetime
@@ -17,8 +16,9 @@ from backend.api.models import (
     SessionStateResponse,
 )
 from backend.api.storage import SessionStorage
+from backend.structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 

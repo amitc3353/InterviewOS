@@ -9,7 +9,6 @@ livekit-plugins-anthropic, but noted here as an explicit direct-SDK dependency.
 """
 
 import json
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict
@@ -24,8 +23,9 @@ from ..models.scorecard import (
     compute_hire_signal,
 )
 from ..models.session import InterviewSession
+from ..structured_logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SCORING_SYSTEM_PROMPT = """\
 The interviewer follows a structured Staff-level (L5→L6) system design interview \

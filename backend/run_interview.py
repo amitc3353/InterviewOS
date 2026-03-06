@@ -1,6 +1,5 @@
 """Run an interview agent."""
 
-import logging
 import sys
 from pathlib import Path
 
@@ -11,18 +10,13 @@ from dotenv import load_dotenv
 
 from backend.config import AgentConfig
 from backend.agents.interview_agent import entrypoint, prewarm  # Phased interview agent
+from backend.structured_logging import get_logger
 from livekit.agents import WorkerOptions, cli
 
 # Load environment variables
 load_dotenv()
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def main():
