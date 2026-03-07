@@ -1,14 +1,14 @@
-"""Tests for TTS pipeline — verifying tts_node produces audio output.
+"""Tests for tts_node wrapper logic and audio frame production.
 
-Tests that InterviewAgent.tts_node correctly passes text through to
-Agent.default.tts_node and yields audio frames. Verifies the integration
-between the custom tts_node wrapper and the underlying TTS provider.
+Tests that InterviewAgent.tts_node correctly buffers text, passes it
+through to Agent.default.tts_node, and yields audio frames. Also verifies
+that normalize_for_tts output is compatible with the tts_node pipeline.
 
 8 tests, zero network calls.
 """
 
 import asyncio
-from typing import List
+from typing import AsyncGenerator, List
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -53,7 +53,7 @@ def _make_audio_frame(
     return frame
 
 
-async def _async_text_generator(chunks: List[str]):
+async def _async_text_generator(chunks: List[str]) -> AsyncGenerator[str, None]:
     """Helper to create async text generator."""
     for chunk in chunks:
         yield chunk
@@ -64,7 +64,7 @@ async def _async_text_generator(chunks: List[str]):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_tts_node_produces_audio_frames_from_text():
+async def test_tts_node_produces_audio_frames_from_text() -> None:
     """tts_node yields audio frames when given interviewer text."""
     agent = InterviewAgent(_make_config(), "Design a URL shortener")
 
@@ -86,7 +86,7 @@ async def test_tts_node_produces_audio_frames_from_text():
 
 
 @pytest.mark.asyncio
-async def test_tts_node_audio_frames_contain_pcm_data():
+async def test_tts_node_audio_frames_contain_pcm_data() -> None:
     """Each audio frame from tts_node contains non-empty PCM audio data."""
     agent = InterviewAgent(_make_config(), "Design a cache")
 
@@ -116,7 +116,7 @@ async def test_tts_node_audio_frames_contain_pcm_data():
 
 
 @pytest.mark.asyncio
-async def test_tts_node_longer_text_receives_more_frames():
+async def test_tts_node_longer_text_receives_more_frames() -> None:
     """tts_node yields more frames when the underlying TTS produces more for longer text."""
     agent = InterviewAgent(_make_config(), "Design a notification system")
 
@@ -159,7 +159,7 @@ async def test_tts_node_longer_text_receives_more_frames():
 
 
 @pytest.mark.asyncio
-async def test_tts_node_passes_all_text_chunks_to_underlying_tts():
+async def test_tts_node_passes_all_text_chunks_to_underlying_tts() -> None:
     """tts_node buffers and passes all text chunks to Agent.default.tts_node."""
     agent = InterviewAgent(_make_config(), "Design a rate limiter")
     received_text: List[str] = []
@@ -190,7 +190,7 @@ async def test_tts_node_passes_all_text_chunks_to_underlying_tts():
 
 
 @pytest.mark.asyncio
-async def test_tts_node_with_special_characters_produces_audio():
+async def test_tts_node_with_special_characters_produces_audio() -> None:
     """Text with special characters and punctuation produces audio without errors."""
     agent = InterviewAgent(_make_config(), "Design an SLA monitor")
 
@@ -216,7 +216,7 @@ async def test_tts_node_with_special_characters_produces_audio():
 
 
 @pytest.mark.asyncio
-async def test_tts_node_single_chunk_produces_audio():
+async def test_tts_node_single_chunk_produces_audio() -> None:
     """tts_node handles a single text chunk and produces audio frames."""
     agent = InterviewAgent(_make_config(), "Design a search engine")
 
@@ -238,8 +238,8 @@ async def test_tts_node_single_chunk_produces_audio():
 
 
 @pytest.mark.asyncio
-async def test_tts_node_whitespace_only_text_skips_synthesis():
-    """tts_node with whitespace-only text still attempts synthesis (non-empty chunks)."""
+async def test_tts_node_whitespace_only_text_calls_synthesis() -> None:
+    """tts_node with whitespace-only text still calls synthesis (non-empty input)."""
     agent = InterviewAgent(_make_config(), "Design a chat system")
     tts_called = [False]
 
@@ -261,11 +261,12 @@ async def test_tts_node_whitespace_only_text_skips_synthesis():
 
 
 @pytest.mark.asyncio
-async def test_normalize_for_tts_integrates_with_tts_pipeline():
-    """normalize_for_tts correctly transforms text that would then flow to tts_node.
+async def test_normalize_for_tts_output_works_with_tts_node() -> None:
+    """normalize_for_tts output is compatible with tts_node and produces audio frames.
 
-    This verifies the integration: llm_node calls normalize_for_tts on text fragments,
-    then the normalized text is yielded to tts_node. We test both stages work together.
+    Verifies that text normalized by normalize_for_tts can be passed to tts_node
+    and produces correct output. Tests the functions independently, not their
+    integration within llm_node.
     """
     agent = InterviewAgent(_make_config(), "Design a cache")
     received_text: List[str] = []
