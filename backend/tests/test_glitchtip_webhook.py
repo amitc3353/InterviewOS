@@ -185,7 +185,9 @@ def test_glitchtip_to_discord_transformation():
     except ImportError:
         pytest.skip("webhook_proxy.py not available or missing dependencies")
 
-    handler = GlitchTipWebhookHandler(Mock(), ("127.0.0.1", 8080), Mock())
+    # BaseHTTPRequestHandler.__init__ calls self.handle() immediately which
+    # tries to read from the socket. Bypass __init__ to test _transform_to_discord directly.
+    handler = object.__new__(GlitchTipWebhookHandler)
     glitchtip_data = _mock_glitchtip_webhook_data()
 
     discord_payload = handler._transform_to_discord(glitchtip_data)

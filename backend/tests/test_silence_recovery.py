@@ -22,6 +22,8 @@ def _make_config() -> AgentConfig:
         livekit_api_secret="test",
         deepgram_api_key="test",
         anthropic_api_key="test",
+        openai_api_key="test",
+        cartesia_api_key="test",
         llm_model="claude-sonnet-4-20250514",
     )
 

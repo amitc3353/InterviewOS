@@ -43,6 +43,14 @@ async def _async_generator_with_delay(items, delay):
         yield item
 
 
+def _make_user_msg():
+    """Create a mock user message to bypass silence detection."""
+    msg = Mock()
+    msg.role = "user"
+    msg.content = [llm.ChatText(text="I would use a distributed cache")]
+    return msg
+
+
 def _make_chat_chunk(content: str, chunk_id: str = "test-chunk") -> llm.ChatChunk:
     """Create a test chat chunk."""
     return llm.ChatChunk(
@@ -116,14 +124,15 @@ async def test_stream_timeout_helper_subsequent_chunks_no_timeout():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
+@patch('backend.agents.interview_agent.LLM_TIMEOUT_SECONDS', 0.1)
 async def test_llm_timeout_retry_success():
     """Timeout on first attempt, success on retry."""
     config = _make_config()
     agent = InterviewAgent(config, "Design a cache")
 
-    # Mock chat context
+    # Mock chat context with user message to bypass silence detection
     chat_ctx = Mock()
-    chat_ctx.messages = Mock(return_value=[])
+    chat_ctx.messages = Mock(return_value=[_make_user_msg()])
     chat_ctx.items = []
     chat_ctx.add_message = Mock()
 
@@ -151,13 +160,14 @@ async def test_llm_timeout_retry_success():
 
 
 @pytest.mark.asyncio
+@patch('backend.agents.interview_agent.LLM_TIMEOUT_SECONDS', 0.1)
 async def test_llm_timeout_max_retries_delivers_filler():
     """After max retries on timeout, deliver filler 'Hmm.'"""
     config = _make_config()
     agent = InterviewAgent(config, "Design a cache")
 
     chat_ctx = Mock()
-    chat_ctx.messages = Mock(return_value=[])
+    chat_ctx.messages = Mock(return_value=[_make_user_msg()])
     chat_ctx.items = []
     chat_ctx.add_message = Mock()
 
@@ -183,7 +193,7 @@ async def test_rate_limit_429_retry_with_backoff():
     agent = InterviewAgent(config, "Design a cache")
 
     chat_ctx = Mock()
-    chat_ctx.messages = Mock(return_value=[])
+    chat_ctx.messages = Mock(return_value=[_make_user_msg()])
     chat_ctx.items = []
     chat_ctx.add_message = Mock()
 
@@ -213,7 +223,7 @@ async def test_rate_limit_429_with_retry_after_header():
     agent = InterviewAgent(config, "Design a cache")
 
     chat_ctx = Mock()
-    chat_ctx.messages = Mock(return_value=[])
+    chat_ctx.messages = Mock(return_value=[_make_user_msg()])
     chat_ctx.items = []
     chat_ctx.add_message = Mock()
 
@@ -244,7 +254,7 @@ async def test_rate_limit_max_retries_delivers_filler():
     agent = InterviewAgent(config, "Design a cache")
 
     chat_ctx = Mock()
-    chat_ctx.messages = Mock(return_value=[])
+    chat_ctx.messages = Mock(return_value=[_make_user_msg()])
     chat_ctx.items = []
     chat_ctx.add_message = Mock()
 
@@ -268,7 +278,7 @@ async def test_non_retryable_error_delivers_filler():
     agent = InterviewAgent(config, "Design a cache")
 
     chat_ctx = Mock()
-    chat_ctx.messages = Mock(return_value=[])
+    chat_ctx.messages = Mock(return_value=[_make_user_msg()])
     chat_ctx.items = []
     chat_ctx.add_message = Mock()
 
@@ -295,7 +305,7 @@ async def test_context_trimming_logs_when_active():
 
     # Create chat context with many messages
     chat_ctx = Mock()
-    chat_ctx.messages = Mock(return_value=[])
+    chat_ctx.messages = Mock(return_value=[_make_user_msg()])
 
     # Create 25 non-system messages (exceeds MAX_HISTORY_MESSAGES=18)
     chat_ctx.items = [
@@ -375,6 +385,7 @@ async def test_empty_stt_response_recovery():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
+@patch('backend.agents.interview_agent.LLM_TIMEOUT_SECONDS', 0.1)
 async def test_full_resilience_flow_timeout_then_success():
     """
     Integration test: Timeout on attempt 1, rate limit on attempt 2, success on attempt 3.
@@ -385,7 +396,7 @@ async def test_full_resilience_flow_timeout_then_success():
     agent = InterviewAgent(config, "Design a cache")
 
     chat_ctx = Mock()
-    chat_ctx.messages = Mock(return_value=[])
+    chat_ctx.messages = Mock(return_value=[_make_user_msg()])
     chat_ctx.items = []
     chat_ctx.add_message = Mock()
 

@@ -171,18 +171,25 @@ async def test_stt_stream_timeout_logs_error():
     with patch('backend.interview.stt_wrapper.logger') as mock_logger:
         mock_logger.error_async = AsyncMock()
 
-        # Create mock stream that times out
-        mock_stream = MagicMock(spec=stt.SpeechStream)
+        # Use a real class instead of MagicMock — dunder methods on MagicMock
+        # instances are not reliably forwarded by the metaclass.
+        class SlowStream:
+            async def __anext__(self):
+                await asyncio.sleep(10)
+                return _make_speech_event()
 
-        async def slow_next():
-            await asyncio.sleep(10)
-            return _make_speech_event()
+            def push_frame(self, frame):
+                pass
 
-        mock_stream.__anext__ = slow_next
+            async def flush(self):
+                pass
+
+            async def aclose(self):
+                pass
 
         # Wrap with timeout
         wrapped_stream = TimeoutSpeechStream(
-            wrapped_stream=mock_stream,
+            wrapped_stream=SlowStream(),
             timeout=0.1,
             turn_number=1,
         )
@@ -206,17 +213,23 @@ async def test_stt_stream_error_logs_error():
     with patch('backend.interview.stt_wrapper.logger') as mock_logger:
         mock_logger.error_async = AsyncMock()
 
-        # Create mock stream that raises error
-        mock_stream = MagicMock(spec=stt.SpeechStream)
+        # Use a real class instead of MagicMock for reliable dunder forwarding.
+        class ErrorStream:
+            async def __anext__(self):
+                raise ValueError("Stream error")
 
-        async def error_next():
-            raise ValueError("Stream error")
+            def push_frame(self, frame):
+                pass
 
-        mock_stream.__anext__ = error_next
+            async def flush(self):
+                pass
+
+            async def aclose(self):
+                pass
 
         # Wrap with timeout
         wrapped_stream = TimeoutSpeechStream(
-            wrapped_stream=mock_stream,
+            wrapped_stream=ErrorStream(),
             timeout=5.0,
             turn_number=1,
         )
@@ -299,7 +312,7 @@ async def test_stt_stream_flush_error_logs_error():
         assert 'event_type' in call_args.kwargs
         assert call_args.kwargs['event_type'] == 'stt_flush_error'
         assert 'error_type' in call_args.kwargs
-        assert call_args.kwargs['error_type'] == 'IOError'
+        assert call_args.kwargs['error_type'] == 'OSError'  # IOError is alias for OSError in Python 3
 
 
 # ---------------------------------------------------------------------------

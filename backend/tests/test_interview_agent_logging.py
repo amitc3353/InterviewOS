@@ -28,6 +28,7 @@ def _make_config() -> AgentConfig:
         livekit_api_secret="test-secret",
         deepgram_api_key="test-key",
         anthropic_api_key="test-key",
+        openai_api_key="test-key",
         cartesia_api_key="test-key",
         cartesia_voice_id="test-voice",
     )
@@ -76,11 +77,12 @@ def test_agent_initialization_logging():
 @pytest.mark.asyncio
 async def test_stt_transcription_received_logging():
     """STT transcription received logs event with text length and turn number."""
-    from backend.structured_logging.structured_logger import StructuredLogger
-
     # Mock logger to capture async calls
     with patch('backend.agents.interview_agent.logger') as mock_logger:
         mock_logger.info_async = AsyncMock()
+        mock_logger.warning_async = AsyncMock()
+        mock_logger.error_async = AsyncMock()
+        mock_logger.debug_async = AsyncMock()
 
         config = _make_config()
         agent = InterviewAgent(config, "Design a URL Shortener")
@@ -93,10 +95,15 @@ async def test_stt_transcription_received_logging():
         chat_ctx.messages.return_value = [user_msg]
         chat_ctx.items = []
 
-        # Mock LLM to prevent actual API calls
+        # Mock LLM to return a proper async generator
         with patch.object(agent.__class__.__bases__[0], 'default') as mock_default:
-            mock_default.llm_node.return_value = AsyncMock()
-            mock_default.llm_node.return_value.__aiter__.return_value = []
+            async def mock_llm_stream(*args, **kwargs):
+                yield llm.ChatChunk(
+                    id="test-chunk",
+                    delta=llm.ChoiceDelta(role="assistant", content="[Q:What is your design?]"),
+                )
+
+            mock_default.llm_node.side_effect = mock_llm_stream
 
             tools = []
             model_settings = MagicMock()
@@ -166,20 +173,30 @@ async def test_llm_request_logging():
     """LLM request start logs event with turn_number and phase."""
     with patch('backend.agents.interview_agent.logger') as mock_logger:
         mock_logger.info_async = AsyncMock()
+        mock_logger.warning_async = AsyncMock()
+        mock_logger.error_async = AsyncMock()
+        mock_logger.debug_async = AsyncMock()
 
         config = _make_config()
         agent = InterviewAgent(config, "Design a URL Shortener")
 
-        # Create mock chat context
+        # Create mock chat context with user message to bypass silence detection
         chat_ctx = MagicMock()
-        chat_ctx.messages.return_value = []
+        user_msg = MagicMock()
+        user_msg.role = "user"
+        user_msg.content = [llm.ChatText(text="I would use a distributed cache")]
+        chat_ctx.messages.return_value = [user_msg]
         chat_ctx.items = []
 
-        # Mock LLM stream
+        # Mock LLM stream with proper async generator
         with patch.object(agent.__class__.__bases__[0], 'default') as mock_default:
-            mock_stream = AsyncMock()
-            mock_stream.__aiter__.return_value = []
-            mock_default.llm_node.return_value = mock_stream
+            async def mock_llm_stream(*args, **kwargs):
+                yield llm.ChatChunk(
+                    id="test-chunk",
+                    delta=llm.ChoiceDelta(role="assistant", content="[Q:What scale?]"),
+                )
+
+            mock_default.llm_node.side_effect = mock_llm_stream
 
             tools = []
             model_settings = MagicMock()
@@ -204,25 +221,30 @@ async def test_llm_response_timing_logging():
     """LLM response completion logs timing metrics."""
     with patch('backend.agents.interview_agent.logger') as mock_logger:
         mock_logger.info_async = AsyncMock()
+        mock_logger.warning_async = AsyncMock()
+        mock_logger.error_async = AsyncMock()
+        mock_logger.debug_async = AsyncMock()
 
         config = _make_config()
         agent = InterviewAgent(config, "Design a URL Shortener")
 
+        # Create mock chat context with user message to bypass silence detection
         chat_ctx = MagicMock()
-        chat_ctx.messages.return_value = []
+        user_msg = MagicMock()
+        user_msg.role = "user"
+        user_msg.content = [llm.ChatText(text="I would use a distributed cache")]
+        chat_ctx.messages.return_value = [user_msg]
         chat_ctx.items = []
 
-        # Mock LLM stream with chunk
+        # Mock LLM stream with proper async generator
         with patch.object(agent.__class__.__bases__[0], 'default') as mock_default:
-            mock_chunk = llm.ChatChunk(
-                id="test-chunk",
-                delta=llm.ChoiceDelta(role="assistant", content="[Q] What is your design?"),
-            )
+            async def mock_llm_stream(*args, **kwargs):
+                yield llm.ChatChunk(
+                    id="test-chunk",
+                    delta=llm.ChoiceDelta(role="assistant", content="[Q:What is your design?]"),
+                )
 
-            async def mock_stream():
-                yield mock_chunk
-
-            mock_default.llm_node.return_value = mock_stream()
+            mock_default.llm_node.side_effect = mock_llm_stream
 
             tools = []
             model_settings = MagicMock()

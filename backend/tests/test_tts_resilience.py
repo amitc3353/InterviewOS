@@ -161,6 +161,7 @@ async def test_tts_max_retries_logs_error_returns_silence():
             pass
         # Always fail
         raise RuntimeError("Cartesia is down")
+        yield  # unreachable — makes this an async generator so side_effect returns it
 
     text_chunks = ["This will fail"]
 

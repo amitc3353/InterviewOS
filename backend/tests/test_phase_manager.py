@@ -131,14 +131,21 @@ def test_time_budget_exactly_at_limit():
     """Phase exactly at time budget should not advance (edge case)."""
     pm = PhaseManager("Design a URL shortener")
 
-    # SCOPE phase with exactly 10 minutes elapsed (budget is 10 min = 600s)
-    state = _make_session_state(InterviewPhase.SCOPE, elapsed_seconds=600)
+    # Use a fixed datetime to avoid timing drift between setting phase_start_time
+    # and the check_and_enforce_time_budget call (which also calls datetime.now())
+    fixed_now = datetime(2024, 3, 15, 10, 10, 0)  # Fixed point in time
+    state = SessionState(phase=InterviewPhase.SCOPE)
 
-    # Verify initial phase
-    assert state.phase == InterviewPhase.SCOPE
+    with patch("backend.models.session.datetime") as mock_dt:
+        mock_dt.now = lambda: fixed_now
+        # Set phase_start_time exactly 600s before fixed_now
+        state.phase_start_time = fixed_now - timedelta(seconds=600)
 
-    # Check time budget enforcement
-    was_advanced = pm.check_and_enforce_time_budget(state)
+        # Verify initial phase
+        assert state.phase == InterviewPhase.SCOPE
+
+        # Check time budget enforcement
+        was_advanced = pm.check_and_enforce_time_budget(state)
 
     # Should NOT advance (only exceeds if > budget, not >=)
     assert was_advanced is False
