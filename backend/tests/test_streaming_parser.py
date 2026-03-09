@@ -135,3 +135,55 @@ def test_trailing_stray_text_after_tags_discarded():
     out, p = _feed_and_flush("[PHASE:scope][Q:What about scale?] some trailing noise")
     assert "What about scale?" in out
     assert "trailing noise" not in out
+
+
+# ---------------------------------------------------------------------------
+# Tests: empty value guards (blocker fix validation)
+# ---------------------------------------------------------------------------
+
+def test_empty_q_tag_not_spoken():
+    """[Q:] with empty value should not produce spoken output."""
+    out, p = _feed_and_flush("[PHASE:scope][Q:][ACK:Got it.]")
+    # Q is empty, so only ACK should be spoken
+    assert "Got it." in out
+    spoken = p.get_spoken_text()
+    assert spoken == "Got it."
+
+
+def test_empty_ack_tag_not_spoken():
+    """[ACK:] with empty value should not produce spoken output."""
+    out, p = _feed_and_flush("[PHASE:scope][ACK:][Q:What about scale?]")
+    assert "What about scale?" in out
+    spoken = p.get_spoken_text()
+    assert spoken == "What about scale?"
+
+
+def test_empty_summary_tag_not_spoken():
+    """[SUMMARY:] with empty value should not produce spoken output."""
+    out, p = _feed_and_flush("[PHASE:architecture][SUMMARY:][Q:How would you design it?]")
+    assert "How would you design it?" in out
+    spoken = p.get_spoken_text()
+    assert spoken == "How would you design it?"
+
+
+def test_empty_context_tag_not_spoken():
+    """[CONTEXT:] with empty value should not produce spoken output."""
+    out, p = _feed_and_flush("[PHASE:failure][CONTEXT:][Q:What breaks?]")
+    assert "What breaks?" in out
+    spoken = p.get_spoken_text()
+    assert spoken == "What breaks?"
+
+
+def test_empty_lock_value_ignored():
+    """[LOCK:=] or [LOCK:key=] with empty key or value should be ignored."""
+    out, p = _feed_and_flush("[PHASE:scope][Q:Scale?][LOCK:=100][LOCK:latency=]")
+    _, constraints = p.get_state_updates()
+    # Both locks should be ignored: first has empty key, second has empty value
+    assert constraints is None
+
+
+def test_valid_lock_with_empty_lock_mixed():
+    """Valid locks are kept, empty-key/value locks are ignored."""
+    out, p = _feed_and_flush("[PHASE:scope][Q:Scale?][LOCK:scale=10K][LOCK:=bad][LOCK:latency=]")
+    _, constraints = p.get_state_updates()
+    assert constraints == {"scale": "10K"}

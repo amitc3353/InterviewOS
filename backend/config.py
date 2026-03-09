@@ -73,6 +73,8 @@ class AgentConfig:
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             cartesia_api_key=os.getenv("CARTESIA_API_KEY", ""),
             cartesia_voice_id=os.getenv("CARTESIA_VOICE_ID", "f786b574-daa5-4673-aa0c-cbe3e8534c02"),
+            cartesia_speed=float(os.getenv("CARTESIA_SPEED", "0.85")),
+            vad_sensitivity=float(os.getenv("VAD_SENSITIVITY", "0.5")),
             min_endpointing_delay=float(os.getenv("MIN_ENDPOINTING_DELAY", "0.6")),
             max_endpointing_delay=float(os.getenv("MAX_ENDPOINTING_DELAY", "5.0")),
             silence_threshold_ms=int(os.getenv("SILENCE_THRESHOLD_MS", "600")),

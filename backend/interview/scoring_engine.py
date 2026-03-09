@@ -195,6 +195,12 @@ class ScoringEngine:
                 logger.error(f"Scoring API call failed after {attempt + 1} attempts: {api_err}")
                 raise
 
+            if not response.content:
+                if attempt < max_api_retries - 1:
+                    logger.warning(f"Scoring API returned empty content (attempt {attempt + 1}), retrying")
+                    continue
+                raise RuntimeError("Scoring API returned empty response content")
+
             raw_text = response.content[0].text.strip()
 
             # Strip markdown fences if Claude includes them despite instructions
@@ -221,17 +227,35 @@ class ScoringEngine:
         """Build an InterviewScorecard from raw Claude JSON output."""
         dimensions: Dict[str, DimensionScore] = {}
 
+        raw_dimensions = raw.get("dimensions", {})
+
         for dim_key, weight in DIMENSION_WEIGHTS.items():
-            dim_data = raw["dimensions"][dim_key]
-            score = int(dim_data["score"])
-            dimensions[dim_key] = DimensionScore(
-                dimension=dim_key,
-                score=score,
-                label=SCORE_LABELS[score],
-                rationale=dim_data["rationale"],
-                strengths=dim_data.get("strengths", []),
-                gaps=dim_data.get("gaps", []),
-            )
+            try:
+                dim_data = raw_dimensions[dim_key]
+                score = int(dim_data["score"])
+                # Clamp score to valid range 1-5
+                score = max(1, min(5, score))
+                dimensions[dim_key] = DimensionScore(
+                    dimension=dim_key,
+                    score=score,
+                    label=SCORE_LABELS[score],
+                    rationale=dim_data.get("rationale", "No rationale provided"),
+                    strengths=dim_data.get("strengths", []),
+                    gaps=dim_data.get("gaps", []),
+                )
+            except (KeyError, TypeError, ValueError) as e:
+                logger.warning(
+                    f"Scoring dimension '{dim_key}' missing or malformed: {e}. "
+                    "Using default score of 3."
+                )
+                dimensions[dim_key] = DimensionScore(
+                    dimension=dim_key,
+                    score=3,
+                    label=SCORE_LABELS[3],
+                    rationale="Could not be scored due to parsing error",
+                    strengths=[],
+                    gaps=[],
+                )
 
         overall_score = round(
             sum(dimensions[k].score * w for k, w in DIMENSION_WEIGHTS.items()), 1
@@ -243,7 +267,7 @@ class ScoringEngine:
             dimensions=dimensions,
             overall_score=overall_score,
             hire_signal=compute_hire_signal(overall_score),
-            narrative=raw["narrative"],
+            narrative=raw.get("narrative", "Narrative not available"),
             locked_constraints=dict(session.state.locked_constraints),
             total_turns=session.state.total_turn_count,
             elapsed_minutes=round(session.state.elapsed_seconds() / 60.0, 1),

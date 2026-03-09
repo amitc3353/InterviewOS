@@ -359,3 +359,155 @@ async def test_call_claude_strips_markdown_fences():
         result = await engine._call_claude("test prompt", _mock_config())
 
     assert result == expected
+
+
+# ---------------------------------------------------------------------------
+# Tests: empty response content handling
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_call_claude_retries_on_empty_content():
+    """Empty response.content triggers retry, second attempt succeeds."""
+    expected = _make_mock_claude_response({dim: 3 for dim in DIMENSION_WEIGHTS})
+
+    empty_response = MagicMock()
+    empty_response.content = []  # Empty content
+
+    good_response = _mock_api_response(expected)
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[empty_response, good_response]
+    )
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+    assert mock_client.messages.create.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_call_claude_raises_on_persistent_empty_content():
+    """Empty response.content on all attempts raises RuntimeError."""
+    empty_response = MagicMock()
+    empty_response.content = []
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=empty_response)
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        with pytest.raises(RuntimeError, match="empty response content"):
+            await engine._call_claude("test prompt", _mock_config())
+
+    assert mock_client.messages.create.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests: _parse_scorecard robustness (missing dimensions, score clamping)
+# ---------------------------------------------------------------------------
+
+def test_parse_scorecard_missing_dimension_uses_default():
+    """Missing dimension in raw JSON defaults to score 3 with fallback rationale."""
+    # Only provide 3 of 5 dimensions
+    raw = {
+        "dimensions": {
+            "requirements_gathering": _make_dimension_data(4),
+            "system_architecture": _make_dimension_data(5),
+            "communication": _make_dimension_data(4),
+            # technical_depth and scalability_reliability missing
+        },
+        "narrative": "Partial scoring data.",
+    }
+    engine = ScoringEngine()
+    session = _make_session()
+    scorecard = engine._parse_scorecard(raw, session)
+
+    # Missing dimensions should default to score 3
+    assert scorecard.dimensions["technical_depth"].score == 3
+    assert scorecard.dimensions["technical_depth"].label == "Solid"
+    assert "parsing error" in scorecard.dimensions["technical_depth"].rationale
+
+    assert scorecard.dimensions["scalability_reliability"].score == 3
+
+    # Present dimensions should be scored normally
+    assert scorecard.dimensions["requirements_gathering"].score == 4
+    assert scorecard.dimensions["system_architecture"].score == 5
+
+
+def test_parse_scorecard_score_clamped_to_valid_range():
+    """Scores outside 1-5 range are clamped."""
+    raw = {
+        "dimensions": {
+            "requirements_gathering": {"score": 0, "rationale": "Low"},
+            "system_architecture": {"score": 10, "rationale": "High"},
+            "technical_depth": {"score": -1, "rationale": "Negative"},
+            "scalability_reliability": {"score": 5, "rationale": "Max"},
+            "communication": {"score": 1, "rationale": "Min"},
+        },
+        "narrative": "Edge case scoring.",
+    }
+    engine = ScoringEngine()
+    session = _make_session()
+    scorecard = engine._parse_scorecard(raw, session)
+
+    assert scorecard.dimensions["requirements_gathering"].score == 1  # clamped from 0
+    assert scorecard.dimensions["system_architecture"].score == 5    # clamped from 10
+    assert scorecard.dimensions["technical_depth"].score == 1        # clamped from -1
+    assert scorecard.dimensions["scalability_reliability"].score == 5
+    assert scorecard.dimensions["communication"].score == 1
+
+
+def test_parse_scorecard_missing_narrative_uses_default():
+    """Missing narrative field uses fallback text."""
+    raw = {
+        "dimensions": {dim: _make_dimension_data(3) for dim in DIMENSION_WEIGHTS},
+        # No "narrative" key
+    }
+    engine = ScoringEngine()
+    session = _make_session()
+    scorecard = engine._parse_scorecard(raw, session)
+
+    assert scorecard.narrative == "Narrative not available"
+
+
+def test_parse_scorecard_empty_dimensions_all_default():
+    """Completely empty dimensions dict defaults all to score 3."""
+    raw = {
+        "dimensions": {},
+        "narrative": "No dimensions.",
+    }
+    engine = ScoringEngine()
+    session = _make_session()
+    scorecard = engine._parse_scorecard(raw, session)
+
+    for dim_key in DIMENSION_WEIGHTS:
+        assert scorecard.dimensions[dim_key].score == 3
+        assert scorecard.dimensions[dim_key].label == "Solid"
+
+    # Overall score should be 3.0 (all 3s)
+    assert scorecard.overall_score == 3.0
+
+
+def test_parse_scorecard_malformed_dimension_data():
+    """Dimension with wrong type (e.g. string instead of dict) defaults to 3."""
+    raw = {
+        "dimensions": {
+            "requirements_gathering": "not a dict",
+            "system_architecture": _make_dimension_data(4),
+            "technical_depth": _make_dimension_data(4),
+            "scalability_reliability": _make_dimension_data(4),
+            "communication": _make_dimension_data(4),
+        },
+        "narrative": "Mostly valid.",
+    }
+    engine = ScoringEngine()
+    session = _make_session()
+    scorecard = engine._parse_scorecard(raw, session)
+
+    # Malformed dimension defaults to 3
+    assert scorecard.dimensions["requirements_gathering"].score == 3
+    # Others are fine
+    assert scorecard.dimensions["system_architecture"].score == 4

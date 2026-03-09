@@ -150,3 +150,180 @@ def test_time_budget_exactly_at_limit():
     # Should NOT advance (only exceeds if > budget, not >=)
     assert was_advanced is False
     assert state.phase == InterviewPhase.SCOPE
+
+
+# ---------------------------------------------------------------------------
+# Tests: should_transition_phase with invalid phases (ValueError handling)
+# ---------------------------------------------------------------------------
+
+def test_should_transition_rejects_invalid_current_phase():
+    """should_transition_phase returns False when current phase is invalid."""
+    pm = PhaseManager("Design a URL shortener")
+    state = SessionState(phase=InterviewPhase.SCOPE)
+    # Forcibly set an invalid phase that isn't in PHASE_ORDER
+    state.phase = "bogus_phase"
+
+    result = pm.should_transition_phase(state, InterviewPhase.ARCHITECTURE)
+    assert result is False
+
+
+def test_should_transition_rejects_invalid_requested_phase():
+    """should_transition_phase returns False when requested phase is invalid."""
+    pm = PhaseManager("Design a URL shortener")
+    state = SessionState(phase=InterviewPhase.SCOPE)
+
+    result = pm.should_transition_phase(state, "nonexistent_phase")
+    assert result is False
+
+
+# ---------------------------------------------------------------------------
+# Tests: get_next_phase with invalid phase (ValueError handling)
+# ---------------------------------------------------------------------------
+
+def test_get_next_phase_invalid_returns_intro():
+    """get_next_phase with invalid phase defaults to INTRO."""
+    pm = PhaseManager("Design a URL shortener")
+    result = pm.get_next_phase("bogus")
+    assert result == InterviewPhase.INTRO
+
+
+def test_get_next_phase_wrap_stays_in_wrap():
+    """get_next_phase from WRAP stays in WRAP (final phase)."""
+    pm = PhaseManager("Design a URL shortener")
+    result = pm.get_next_phase(InterviewPhase.WRAP)
+    assert result == InterviewPhase.WRAP
+
+
+def test_get_next_phase_normal_progression():
+    """get_next_phase returns the correct next phase for valid phases."""
+    pm = PhaseManager("Design a URL shortener")
+    assert pm.get_next_phase(InterviewPhase.INTRO) == InterviewPhase.SCOPE
+    assert pm.get_next_phase(InterviewPhase.SCOPE) == InterviewPhase.ARCHITECTURE
+    assert pm.get_next_phase(InterviewPhase.DEEP_DIVE) == InterviewPhase.FAILURE
+
+
+# ---------------------------------------------------------------------------
+# Tests: _get_depth_guidance with mixed component formats
+# ---------------------------------------------------------------------------
+
+def test_depth_guidance_with_string_components():
+    """_get_depth_guidance handles string components (not dicts) gracefully."""
+    from backend.interview.scenario_loader import ScenarioMetadata
+    metadata = ScenarioMetadata(
+        id="test",
+        name="Test Scenario",
+        description="Test",
+        archetype="distributed",
+        complexity_notes="Complex stuff",
+        scope_answers={},
+        failure_scenarios=[],
+        critical_components=["Component A", "Component B"],
+        low_priority_components=["Low priority C"],
+        scoring_benchmarks={},
+        deep_dive_focus=[],
+    )
+    pm = PhaseManager("Test Scenario", scenario_metadata=metadata)
+    guidance = pm._get_depth_guidance()
+
+    assert "Component A" in guidance
+    assert "Component B" in guidance
+
+
+def test_depth_guidance_with_dict_components():
+    """_get_depth_guidance handles dict components with name/why keys."""
+    from backend.interview.scenario_loader import ScenarioMetadata
+    metadata = ScenarioMetadata(
+        id="test",
+        name="Test Scenario",
+        description="Test",
+        archetype="distributed",
+        complexity_notes="",
+        scope_answers={},
+        failure_scenarios=[],
+        critical_components=[{"name": "Cache Layer", "why": "Performance critical"}],
+        low_priority_components=[],
+        scoring_benchmarks={},
+        deep_dive_focus=[],
+    )
+    pm = PhaseManager("Test Scenario", scenario_metadata=metadata)
+    guidance = pm._get_depth_guidance()
+
+    assert "Cache Layer" in guidance
+    assert "Performance critical" in guidance
+
+
+def test_depth_guidance_with_dict_missing_keys():
+    """_get_depth_guidance handles dicts missing 'name' or 'why' gracefully."""
+    from backend.interview.scenario_loader import ScenarioMetadata
+    metadata = ScenarioMetadata(
+        id="test",
+        name="Test Scenario",
+        description="Test",
+        archetype="distributed",
+        complexity_notes="",
+        scope_answers={},
+        failure_scenarios=[],
+        critical_components=[{"name": "Only Name"}, {}],
+        low_priority_components=[],
+        scoring_benchmarks={},
+        deep_dive_focus=[],
+    )
+    pm = PhaseManager("Test Scenario", scenario_metadata=metadata)
+    guidance = pm._get_depth_guidance()
+
+    assert "Only Name" in guidance
+    assert "Unknown" in guidance  # Empty dict defaults to "Unknown"
+
+
+# ---------------------------------------------------------------------------
+# Tests: _get_failure_scenarios_guidance with mixed formats
+# ---------------------------------------------------------------------------
+
+def test_failure_scenarios_with_string_entries():
+    """_get_failure_scenarios_guidance handles string entries gracefully."""
+    from backend.interview.scenario_loader import ScenarioMetadata
+    metadata = ScenarioMetadata(
+        id="test",
+        name="Test Scenario",
+        description="Test",
+        archetype="distributed",
+        complexity_notes="",
+        scope_answers={},
+        failure_scenarios=["Database goes down", "Network partition"],
+        critical_components=[],
+        low_priority_components=[],
+        scoring_benchmarks={},
+        deep_dive_focus=[],
+    )
+    pm = PhaseManager("Test Scenario", scenario_metadata=metadata)
+    guidance = pm._get_failure_scenarios_guidance()
+
+    assert "Database goes down" in guidance
+    assert "Network partition" in guidance
+
+
+def test_failure_scenarios_with_dict_entries():
+    """_get_failure_scenarios_guidance handles dict entries with scenario/focus keys."""
+    from backend.interview.scenario_loader import ScenarioMetadata
+    metadata = ScenarioMetadata(
+        id="test",
+        name="Test Scenario",
+        description="Test",
+        archetype="distributed",
+        complexity_notes="",
+        scope_answers={},
+        failure_scenarios=[
+            {"scenario": "Region outage", "focus": "Failover mechanisms"},
+            {"scenario": "Traffic spike"},  # Missing 'focus'
+        ],
+        critical_components=[],
+        low_priority_components=[],
+        scoring_benchmarks={},
+        deep_dive_focus=[],
+    )
+    pm = PhaseManager("Test Scenario", scenario_metadata=metadata)
+    guidance = pm._get_failure_scenarios_guidance()
+
+    assert "Region outage" in guidance
+    assert "Failover mechanisms" in guidance
+    assert "Traffic spike" in guidance
