@@ -258,7 +258,7 @@ async def test_rate_limit_max_retries_delivers_filler():
     chat_ctx.items = []
     chat_ctx.add_message = Mock()
 
-    async def mock_llm_node_always_429(*args, **kwargs):
+    def mock_llm_node_always_429(*args, **kwargs):
         raise MockRateLimitError()
 
     with patch.object(agent.__class__.__bases__[0].default, 'llm_node', side_effect=mock_llm_node_always_429):
@@ -282,7 +282,7 @@ async def test_non_retryable_error_delivers_filler():
     chat_ctx.items = []
     chat_ctx.add_message = Mock()
 
-    async def mock_llm_node_500_error(*args, **kwargs):
+    def mock_llm_node_500_error(*args, **kwargs):
         error = Exception("Internal server error")
         error.status_code = 500
         raise error

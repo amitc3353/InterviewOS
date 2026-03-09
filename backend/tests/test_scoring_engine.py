@@ -1,7 +1,8 @@
-"""Tests for ScoringEngine — 7 tests, zero network calls."""
+"""Tests for ScoringEngine — scoring logic + API retry resilience, zero network calls."""
+import asyncio
 import json
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -194,3 +195,167 @@ async def test_parse_mock_response():
     # Metadata
     assert scorecard.session_id == "test-session-123"
     assert scorecard.locked_constraints == {"consistency": "eventual"}
+
+
+# ---------------------------------------------------------------------------
+# Tests: _call_claude retry logic
+# ---------------------------------------------------------------------------
+
+def _mock_api_response(raw_json: dict) -> MagicMock:
+    """Build a mock Anthropic API response with content[0].text."""
+    response = MagicMock()
+    response.content = [MagicMock()]
+    response.content[0].text = json.dumps(raw_json)
+    return response
+
+
+def _mock_config():
+    """Build a minimal config for _call_claude tests."""
+    config = MagicMock()
+    config.anthropic_api_key = "test-key"
+    config.llm_model = "claude-sonnet-4-20250514"
+    return config
+
+
+@pytest.mark.asyncio
+async def test_call_claude_success_no_retry():
+    """Successful API call returns parsed JSON without retrying."""
+    expected = _make_mock_claude_response({dim: 3 for dim in DIMENSION_WEIGHTS})
+    mock_response = _mock_api_response(expected)
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+    assert mock_client.messages.create.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_call_claude_retries_on_429():
+    """429 rate limit triggers retry with backoff."""
+    expected = _make_mock_claude_response({dim: 4 for dim in DIMENSION_WEIGHTS})
+    mock_response = _mock_api_response(expected)
+
+    rate_limit_err = Exception("Rate limited")
+    rate_limit_err.status_code = 429
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[rate_limit_err, mock_response]
+    )
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("backend.interview.scoring_engine.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            engine = ScoringEngine()
+            result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+    assert mock_client.messages.create.call_count == 2
+    mock_sleep.assert_called_once_with(1.0)  # backoff_base * 2^0
+
+
+@pytest.mark.asyncio
+async def test_call_claude_retries_on_502():
+    """502 server error triggers retry."""
+    expected = _make_mock_claude_response({dim: 3 for dim in DIMENSION_WEIGHTS})
+    mock_response = _mock_api_response(expected)
+
+    server_err = Exception("Bad gateway")
+    server_err.status_code = 502
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[server_err, mock_response]
+    )
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("backend.interview.scoring_engine.asyncio.sleep", new_callable=AsyncMock):
+            engine = ScoringEngine()
+            result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+    assert mock_client.messages.create.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_call_claude_raises_after_max_retries():
+    """Exhausting retries on transient errors raises the last exception."""
+    server_err = Exception("Server overloaded")
+    server_err.status_code = 529
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[server_err, server_err, server_err]
+    )
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("backend.interview.scoring_engine.asyncio.sleep", new_callable=AsyncMock):
+            engine = ScoringEngine()
+            with pytest.raises(Exception, match="Server overloaded"):
+                await engine._call_claude("test prompt", _mock_config())
+
+    assert mock_client.messages.create.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_call_claude_non_retryable_error_raises_immediately():
+    """Non-retryable errors (e.g. 401) are raised without retry."""
+    auth_err = Exception("Unauthorized")
+    auth_err.status_code = 401
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(side_effect=auth_err)
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        with pytest.raises(Exception, match="Unauthorized"):
+            await engine._call_claude("test prompt", _mock_config())
+
+    assert mock_client.messages.create.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_call_claude_retries_on_json_parse_failure():
+    """JSON parse failure triggers retry, second attempt succeeds."""
+    expected = _make_mock_claude_response({dim: 3 for dim in DIMENSION_WEIGHTS})
+
+    bad_response = MagicMock()
+    bad_response.content = [MagicMock()]
+    bad_response.content[0].text = "not valid json {"
+
+    good_response = _mock_api_response(expected)
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[bad_response, good_response]
+    )
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+    assert mock_client.messages.create.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_call_claude_strips_markdown_fences():
+    """Markdown fences around JSON are stripped before parsing."""
+    expected = _make_mock_claude_response({dim: 5 for dim in DIMENSION_WEIGHTS})
+
+    fenced_response = MagicMock()
+    fenced_response.content = [MagicMock()]
+    fenced_response.content[0].text = f"```json\n{json.dumps(expected)}\n```"
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=fenced_response)
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected

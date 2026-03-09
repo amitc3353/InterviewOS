@@ -8,6 +8,7 @@ Dependency: anthropic (pip install anthropic). Likely already present via
 livekit-plugins-anthropic, but noted here as an explicit direct-SDK dependency.
 """
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -162,17 +163,38 @@ class ScoringEngine:
         )
 
     async def _call_claude(self, prompt: str, config) -> Dict:
-        """Call Anthropic directly and return parsed JSON dict. Retries once on parse failure."""
-        client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
+        """Call Anthropic directly and return parsed JSON dict.
 
-        for attempt in range(2):
-            response = await client.messages.create(
-                model=config.llm_model,
-                max_tokens=2048,
-                temperature=0,          # deterministic scoring
-                system=_SCORING_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}],
-            )
+        Retries on transient API errors (network, rate limit, server errors)
+        with exponential backoff, then retries once more on JSON parse failure.
+        """
+        client = anthropic.AsyncAnthropic(api_key=config.anthropic_api_key)
+        max_api_retries = 3
+        backoff_base = 1.0  # seconds
+
+        for attempt in range(max_api_retries):
+            try:
+                response = await client.messages.create(
+                    model=config.llm_model,
+                    max_tokens=2048,
+                    temperature=0,          # deterministic scoring
+                    system=_SCORING_SYSTEM_PROMPT,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+            except Exception as api_err:
+                status_code = getattr(api_err, "status_code", None)
+                is_retryable = status_code in (429, 500, 502, 503, 529) or status_code is None
+                if is_retryable and attempt < max_api_retries - 1:
+                    wait = backoff_base * (2 ** attempt)
+                    logger.warning(
+                        f"Scoring API call failed (attempt {attempt + 1}/{max_api_retries}), "
+                        f"retrying in {wait:.1f}s: {api_err}"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                logger.error(f"Scoring API call failed after {attempt + 1} attempts: {api_err}")
+                raise
+
             raw_text = response.content[0].text.strip()
 
             # Strip markdown fences if Claude includes them despite instructions
@@ -186,8 +208,8 @@ class ScoringEngine:
             try:
                 return json.loads(raw_text)
             except json.JSONDecodeError as exc:
-                if attempt == 0:
-                    logger.warning(f"Scoring JSON parse failed (attempt 1), retrying: {exc}")
+                if attempt < max_api_retries - 1:
+                    logger.warning(f"Scoring JSON parse failed (attempt {attempt + 1}), retrying: {exc}")
                 else:
                     logger.error(f"Scoring JSON parse failed after retry: {exc}\nRaw: {raw_text[:500]}")
                     raise
