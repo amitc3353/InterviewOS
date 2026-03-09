@@ -3,7 +3,7 @@
 import json
 import re
 from typing import Dict, List, Optional, Tuple
-from backend.structured_logging import get_logger
+from ..structured_logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -96,24 +96,26 @@ class StreamingResponseParser:
 
             elif tag == "SUMMARY":
                 self._has_summary = True
-                self._spoken_parts.append(value)
-                spoken_output.append(value)
+                if value:
+                    self._spoken_parts.append(value)
+                    spoken_output.append(value)
 
             elif tag == "ACK":
                 # Suppress ACK if SUMMARY already spoken this turn
-                if not self._has_summary:
+                if not self._has_summary and value:
                     self._spoken_parts.append(value)
                     spoken_output.append(value)
 
             elif tag == "CONTEXT":
                 # Suppress CONTEXT if SUMMARY already spoken this turn (same rule as ACK)
-                if not self._has_summary:
+                if not self._has_summary and value:
                     self._spoken_parts.append(value)
                     spoken_output.append(value)
 
             elif tag == "Q":
-                self._spoken_parts.append(value)
-                spoken_output.append(value)
+                if value:
+                    self._spoken_parts.append(value)
+                    spoken_output.append(value)
 
             # LISTEN and FOLLOWUP: silently discard
 
@@ -198,7 +200,10 @@ class StreamingResponseParser:
         for lock_str in self._locks:
             if "=" in lock_str:
                 key, _, value = lock_str.partition("=")
-                constraints[key.strip()] = value.strip()
+                key = key.strip()
+                value = value.strip()
+                if key and value:
+                    constraints[key] = value
         return phase, constraints if constraints else None
 
     def get_spoken_text(self) -> str:

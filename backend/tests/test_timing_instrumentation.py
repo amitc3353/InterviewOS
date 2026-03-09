@@ -122,9 +122,9 @@ def test_timing_log_with_missing_metrics(caplog):
     agent = InterviewAgent(config, "Design an API gateway")
     agent.interview_session.state.total_turn_count = 1
 
-    event = Mock()
+    event = Mock(spec=[])
     event.llm_ttft = 0.9
-    # stt_duration and tts_ttfb are missing
+    # stt_duration and tts_ttfb are missing (spec=[] prevents auto-creation)
 
     with caplog.at_level(logging.INFO):
         stt_ms = event.stt_duration * 1000 if hasattr(event, "stt_duration") and event.stt_duration else 0

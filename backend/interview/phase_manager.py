@@ -1394,7 +1394,9 @@ say "That's up to you — make a reasonable assumption and we'll go with it." ""
         if self.scenario_metadata.critical_components:
             lines.append("Spend 3-4 turns on these (most important):")
             for c in self.scenario_metadata.critical_components:
-                lines.append(f"- {c['name']} — {c['why']}")
+                name = c.get("name", "Unknown") if isinstance(c, dict) else str(c)
+                why = c.get("why", "") if isinstance(c, dict) else ""
+                lines.append(f"- {name} — {why}" if why else f"- {name}")
             lines.append("")
 
         if self.scenario_metadata.low_priority_components:
@@ -1425,8 +1427,11 @@ say "That's up to you — make a reasonable assumption and we'll go with it." ""
         lines.append("")
 
         for i, fs in enumerate(self.scenario_metadata.failure_scenarios, 1):
-            lines.append(f"{i}. Scenario: \"{fs['scenario']}\"")
-            lines.append(f"   Focus areas: {fs['focus']}")
+            scenario_text = fs.get("scenario", "Unknown scenario") if isinstance(fs, dict) else str(fs)
+            focus_text = fs.get("focus", "General analysis") if isinstance(fs, dict) else ""
+            lines.append(f"{i}. Scenario: \"{scenario_text}\"")
+            if focus_text:
+                lines.append(f"   Focus areas: {focus_text}")
             lines.append("")
 
         lines.append("""Pick 2-3 of these. Present each using [CONTEXT:] for the setup, then [Q:]
@@ -1709,7 +1714,18 @@ established X, Y, Z — now let's move to design."
         current_phase = state.phase
 
         # Can't go backward (monotonic enforcement happens in SessionState.advance_phase)
-        current_idx = PHASE_ORDER.index(current_phase)
+        try:
+            current_idx = PHASE_ORDER.index(current_phase)
+        except ValueError:
+            logger.warning(
+                f"Current phase is invalid: {current_phase}",
+                event_type="phase_transition_check",
+                session_id=state.session_id,
+                turn_number=state.total_turn_count,
+                current_phase=str(current_phase),
+                result="rejected_invalid_current"
+            )
+            return False
         try:
             requested_idx = PHASE_ORDER.index(requested_phase)
         except ValueError:
@@ -1791,9 +1807,16 @@ established X, Y, Z — now let's move to design."
     
     def get_next_phase(self, current_phase: InterviewPhase) -> InterviewPhase:
         """Get next phase in sequence."""
-        current_idx = PHASE_ORDER.index(current_phase)
-        
+        try:
+            current_idx = PHASE_ORDER.index(current_phase)
+        except ValueError:
+            logger.warning(
+                f"get_next_phase called with invalid phase: {current_phase}, "
+                "defaulting to INTRO"
+            )
+            return PHASE_ORDER[0]
+
         if current_idx < len(PHASE_ORDER) - 1:
             return PHASE_ORDER[current_idx + 1]
-        
+
         return current_phase  # Stay in wrap phase

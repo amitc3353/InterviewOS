@@ -31,6 +31,9 @@ def main():
                     "DEEPGRAM_API_KEY, ANTHROPIC_API_KEY, CARTESIA_API_KEY")
         sys.exit(1)
 
+    # Initialize structured logging from environment config
+    config.init_logging()
+
     # Initialize Sentry error tracking
     config.init_sentry()
 

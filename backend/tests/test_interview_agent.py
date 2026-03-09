@@ -34,9 +34,12 @@ def _make_chat_chunk(content: str, chunk_id: str = "test-chunk") -> llm.ChatChun
 
 
 def _make_chat_ctx():
-    """Create a mock chat context."""
+    """Create a mock chat context with a user message (prevents silence handler)."""
     chat_ctx = Mock()
-    chat_ctx.messages = Mock(return_value=[])
+    user_msg = Mock()
+    user_msg.role = "user"
+    user_msg.content = ["I would use a distributed hash map for the cache layer"]
+    chat_ctx.messages = Mock(return_value=[user_msg])
     chat_ctx.items = []
     chat_ctx.add_message = Mock()
     return chat_ctx
@@ -126,8 +129,8 @@ async def test_empty_llm_response_retry_success():
     # Verify the assistant message was recorded
     assert len(agent.interview_session.state.conversation_history) > 0
     last_msg = agent.interview_session.state.conversation_history[-1]
-    assert last_msg["role"] == "assistant"
-    assert len(last_msg["content"]) > 0
+    assert last_msg.role == "assistant"
+    assert len(last_msg.content) > 0
 
 
 @pytest.mark.asyncio
@@ -167,8 +170,8 @@ async def test_empty_llm_response_retry_fails_uses_hardcoded_fallback():
     # Verify fallback was recorded in history
     assert len(agent.interview_session.state.conversation_history) > 0
     last_msg = agent.interview_session.state.conversation_history[-1]
-    assert last_msg["role"] == "assistant"
-    assert "Could you elaborate on that?" in last_msg["content"]
+    assert last_msg.role == "assistant"
+    assert "Could you elaborate on that?" in last_msg.content
 
 
 @pytest.mark.asyncio
@@ -277,5 +280,5 @@ async def test_non_empty_llm_response_no_retry():
     # Verify spoken text was recorded
     assert len(agent.interview_session.state.conversation_history) > 0
     last_msg = agent.interview_session.state.conversation_history[-1]
-    assert last_msg["role"] == "assistant"
-    assert len(last_msg["content"]) > 0
+    assert last_msg.role == "assistant"
+    assert len(last_msg.content) > 0

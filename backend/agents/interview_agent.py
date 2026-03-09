@@ -16,7 +16,6 @@ from ..models.scorecard import InterviewScorecard
 from ..interview.phase_manager import PhaseManager
 from ..interview.response_parser import StreamingResponseParser
 from ..interview.scoring_engine import ScoringEngine
-from ..interview.sentry_context import set_interview_context, update_turn_context
 from ..interview.stt_wrapper import TimeoutSTT
 from ..interview.tts_pronunciations import normalize_for_tts as _normalize_for_tts
 from ..api.transcript_manager import TranscriptEvent, get_transcript_manager
@@ -165,15 +164,22 @@ class InterviewAgent(Agent):
                 if user_text:
                     self.interview_session.state.add_message("user", user_text)
                     # Publish transcript event for WebSocket subscribers
-                    await get_transcript_manager().publish(
-                        self.interview_session.state.session_id,
-                        TranscriptEvent(
-                            speaker="candidate",
-                            text=user_text,
-                            phase=self.interview_session.state.phase.value,
+                    try:
+                        await get_transcript_manager().publish(
+                            self.interview_session.state.session_id,
+                            TranscriptEvent(
+                                speaker="candidate",
+                                text=user_text,
+                                phase=self.interview_session.state.phase.value,
+                                turn_number=self.interview_session.state.total_turn_count,
+                            ),
+                        )
+                    except Exception:
+                        await logger.warning_async(
+                            "Failed to publish candidate transcript event",
+                            event_type="transcript_publish_error",
                             turn_number=self.interview_session.state.total_turn_count,
-                        ),
-                    )
+                        )
                     await logger.info_async(
                         "STT transcription received",
                         event_type="stt_complete",
@@ -205,15 +211,22 @@ class InterviewAgent(Agent):
                 # Record recovery message in history
                 self.interview_session.state.add_message("assistant", recovery_text)
                 # Publish transcript event for WebSocket subscribers
-                await get_transcript_manager().publish(
-                    self.interview_session.state.session_id,
-                    TranscriptEvent(
-                        speaker="interviewer",
-                        text=recovery_text,
-                        phase=self.interview_session.state.phase.value,
+                try:
+                    await get_transcript_manager().publish(
+                        self.interview_session.state.session_id,
+                        TranscriptEvent(
+                            speaker="interviewer",
+                            text=recovery_text,
+                            phase=self.interview_session.state.phase.value,
+                            turn_number=self.interview_session.state.total_turn_count,
+                        ),
+                    )
+                except Exception:
+                    await logger.warning_async(
+                        "Failed to publish recovery transcript event",
+                        event_type="transcript_publish_error",
                         turn_number=self.interview_session.state.total_turn_count,
-                    ),
-                )
+                    )
                 await logger.info_async(
                     "STT recovery message sent",
                     event_type="stt_recovery",
@@ -278,12 +291,15 @@ class InterviewAgent(Agent):
                 )
             self._failure_setup_interrupted = False
 
-        # CRITICAL: Remove previous dynamic context to prevent accumulation
-        # chat_ctx.items[0] = static system (never changes, KV-cached)
-        # chat_ctx.items[1] = previous dynamic context (remove before adding new one)
-        # LiveKit 1.4.3: items can include non-message objects, check if it's a message first
-        if len(chat_ctx.items) > 1 and hasattr(chat_ctx.items[1], 'role') and chat_ctx.items[1].role == "system":
-            chat_ctx.items.pop(1)
+        # CRITICAL: Remove ALL previous dynamic system messages to prevent accumulation.
+        # chat_ctx.items[0] = static system prompt (never changes, KV-cached) — always keep.
+        # Any subsequent system messages are stale dynamic contexts — remove them all.
+        # This is more robust than index-based removal which can miss accumulated messages.
+        if len(chat_ctx.items) > 1:
+            chat_ctx.items = [chat_ctx.items[0]] + [
+                item for item in chat_ctx.items[1:]
+                if not (hasattr(item, 'role') and item.role == "system")
+            ]
 
         # Add fresh dynamic context as separate system message
         chat_ctx.add_message(role="system", content=dynamic_context)
@@ -694,15 +710,22 @@ class InterviewAgent(Agent):
         if full_spoken:
             self.interview_session.state.add_message("assistant", full_spoken)
             # Publish transcript event for WebSocket subscribers
-            await get_transcript_manager().publish(
-                self.interview_session.state.session_id,
-                TranscriptEvent(
-                    speaker="interviewer",
-                    text=full_spoken,
-                    phase=self.interview_session.state.phase.value,
+            try:
+                await get_transcript_manager().publish(
+                    self.interview_session.state.session_id,
+                    TranscriptEvent(
+                        speaker="interviewer",
+                        text=full_spoken,
+                        phase=self.interview_session.state.phase.value,
+                        turn_number=self.interview_session.state.total_turn_count,
+                    ),
+                )
+            except Exception:
+                await logger.warning_async(
+                    "Failed to publish interviewer transcript event",
+                    event_type="transcript_publish_error",
                     turn_number=self.interview_session.state.total_turn_count,
-                ),
-            )
+                )
             await logger.debug_async(
                 f"Recorded assistant turn: {full_spoken[:100]}...",
                 event_type="turn_recorded",
@@ -780,6 +803,7 @@ class InterviewAgent(Agent):
 
         # TTS resilience configuration
         TTS_TIMEOUT_SECONDS = 5.0  # Timeout for first audio frame only
+        TTS_MAX_TOTAL_SECONDS = 30.0  # Max total TTS duration to prevent indefinite hangs
         MAX_TTS_RETRIES = 2  # Total attempts including initial try
 
         for attempt in range(MAX_TTS_RETRIES):
@@ -809,11 +833,20 @@ class InterviewAgent(Agent):
                     )
                     yield first_frame
                     frame_count = 1
+                    tts_start_time = time.monotonic()
 
-                    # Stream remaining frames without timeout (normal streaming can be slow for long text)
+                    # Stream remaining frames with cumulative timeout to prevent indefinite hangs
                     async for audio_frame in tts_stream:
                         yield audio_frame
                         frame_count += 1
+                        if time.monotonic() - tts_start_time > TTS_MAX_TOTAL_SECONDS:
+                            await logger.warning_async(
+                                f"TTS cumulative timeout ({TTS_MAX_TOTAL_SECONDS}s) — truncating audio",
+                                event_type="tts_cumulative_timeout",
+                                turn_number=self.interview_session.state.total_turn_count,
+                                frame_count=frame_count,
+                            )
+                            break
 
                     await logger.info_async(
                         f"TTS synthesis complete — {frame_count} frames",

@@ -226,9 +226,10 @@ def test_update_turn_context_handles_errors_gracefully(mock_sentry, caplog):
     with caplog.at_level(logging.WARNING):
         update_turn_context(state)
 
-    # Should log warning
-    assert len(caplog.records) == 1
-    assert "Failed to update Sentry turn context" in caplog.records[0].message
+    # Should log warning (filter to WARNING+ to ignore INFO logs from _make_session_state)
+    warning_records = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert len(warning_records) == 1
+    assert "Failed to update Sentry turn context" in warning_records[0].message
 
 
 # ---------------------------------------------------------------------------

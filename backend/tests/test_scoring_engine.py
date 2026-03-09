@@ -1,7 +1,8 @@
-"""Tests for ScoringEngine — 7 tests, zero network calls."""
+"""Tests for ScoringEngine — scoring logic + API retry resilience, zero network calls."""
+import asyncio
 import json
 from datetime import datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -194,3 +195,319 @@ async def test_parse_mock_response():
     # Metadata
     assert scorecard.session_id == "test-session-123"
     assert scorecard.locked_constraints == {"consistency": "eventual"}
+
+
+# ---------------------------------------------------------------------------
+# Tests: _call_claude retry logic
+# ---------------------------------------------------------------------------
+
+def _mock_api_response(raw_json: dict) -> MagicMock:
+    """Build a mock Anthropic API response with content[0].text."""
+    response = MagicMock()
+    response.content = [MagicMock()]
+    response.content[0].text = json.dumps(raw_json)
+    return response
+
+
+def _mock_config():
+    """Build a minimal config for _call_claude tests."""
+    config = MagicMock()
+    config.anthropic_api_key = "test-key"
+    config.llm_model = "claude-sonnet-4-20250514"
+    return config
+
+
+@pytest.mark.asyncio
+async def test_call_claude_success_no_retry():
+    """Successful API call returns parsed JSON without retrying."""
+    expected = _make_mock_claude_response({dim: 3 for dim in DIMENSION_WEIGHTS})
+    mock_response = _mock_api_response(expected)
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=mock_response)
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+    assert mock_client.messages.create.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_call_claude_retries_on_429():
+    """429 rate limit triggers retry with backoff."""
+    expected = _make_mock_claude_response({dim: 4 for dim in DIMENSION_WEIGHTS})
+    mock_response = _mock_api_response(expected)
+
+    rate_limit_err = Exception("Rate limited")
+    rate_limit_err.status_code = 429
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[rate_limit_err, mock_response]
+    )
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("backend.interview.scoring_engine.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            engine = ScoringEngine()
+            result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+    assert mock_client.messages.create.call_count == 2
+    mock_sleep.assert_called_once_with(1.0)  # backoff_base * 2^0
+
+
+@pytest.mark.asyncio
+async def test_call_claude_retries_on_502():
+    """502 server error triggers retry."""
+    expected = _make_mock_claude_response({dim: 3 for dim in DIMENSION_WEIGHTS})
+    mock_response = _mock_api_response(expected)
+
+    server_err = Exception("Bad gateway")
+    server_err.status_code = 502
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[server_err, mock_response]
+    )
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("backend.interview.scoring_engine.asyncio.sleep", new_callable=AsyncMock):
+            engine = ScoringEngine()
+            result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+    assert mock_client.messages.create.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_call_claude_raises_after_max_retries():
+    """Exhausting retries on transient errors raises the last exception."""
+    server_err = Exception("Server overloaded")
+    server_err.status_code = 529
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[server_err, server_err, server_err]
+    )
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        with patch("backend.interview.scoring_engine.asyncio.sleep", new_callable=AsyncMock):
+            engine = ScoringEngine()
+            with pytest.raises(Exception, match="Server overloaded"):
+                await engine._call_claude("test prompt", _mock_config())
+
+    assert mock_client.messages.create.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_call_claude_non_retryable_error_raises_immediately():
+    """Non-retryable errors (e.g. 401) are raised without retry."""
+    auth_err = Exception("Unauthorized")
+    auth_err.status_code = 401
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(side_effect=auth_err)
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        with pytest.raises(Exception, match="Unauthorized"):
+            await engine._call_claude("test prompt", _mock_config())
+
+    assert mock_client.messages.create.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_call_claude_retries_on_json_parse_failure():
+    """JSON parse failure triggers retry, second attempt succeeds."""
+    expected = _make_mock_claude_response({dim: 3 for dim in DIMENSION_WEIGHTS})
+
+    bad_response = MagicMock()
+    bad_response.content = [MagicMock()]
+    bad_response.content[0].text = "not valid json {"
+
+    good_response = _mock_api_response(expected)
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[bad_response, good_response]
+    )
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+    assert mock_client.messages.create.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_call_claude_strips_markdown_fences():
+    """Markdown fences around JSON are stripped before parsing."""
+    expected = _make_mock_claude_response({dim: 5 for dim in DIMENSION_WEIGHTS})
+
+    fenced_response = MagicMock()
+    fenced_response.content = [MagicMock()]
+    fenced_response.content[0].text = f"```json\n{json.dumps(expected)}\n```"
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=fenced_response)
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+
+
+# ---------------------------------------------------------------------------
+# Tests: empty response content handling
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_call_claude_retries_on_empty_content():
+    """Empty response.content triggers retry, second attempt succeeds."""
+    expected = _make_mock_claude_response({dim: 3 for dim in DIMENSION_WEIGHTS})
+
+    empty_response = MagicMock()
+    empty_response.content = []  # Empty content
+
+    good_response = _mock_api_response(expected)
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(
+        side_effect=[empty_response, good_response]
+    )
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        result = await engine._call_claude("test prompt", _mock_config())
+
+    assert result == expected
+    assert mock_client.messages.create.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_call_claude_raises_on_persistent_empty_content():
+    """Empty response.content on all attempts raises RuntimeError."""
+    empty_response = MagicMock()
+    empty_response.content = []
+
+    mock_client = AsyncMock()
+    mock_client.messages.create = AsyncMock(return_value=empty_response)
+
+    with patch("backend.interview.scoring_engine.anthropic.AsyncAnthropic", return_value=mock_client):
+        engine = ScoringEngine()
+        with pytest.raises(RuntimeError, match="empty response content"):
+            await engine._call_claude("test prompt", _mock_config())
+
+    assert mock_client.messages.create.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests: _parse_scorecard robustness (missing dimensions, score clamping)
+# ---------------------------------------------------------------------------
+
+def test_parse_scorecard_missing_dimension_uses_default():
+    """Missing dimension in raw JSON defaults to score 3 with fallback rationale."""
+    # Only provide 3 of 5 dimensions
+    raw = {
+        "dimensions": {
+            "requirements_gathering": _make_dimension_data(4),
+            "system_architecture": _make_dimension_data(5),
+            "communication": _make_dimension_data(4),
+            # technical_depth and scalability_reliability missing
+        },
+        "narrative": "Partial scoring data.",
+    }
+    engine = ScoringEngine()
+    session = _make_session()
+    scorecard = engine._parse_scorecard(raw, session)
+
+    # Missing dimensions should default to score 3
+    assert scorecard.dimensions["technical_depth"].score == 3
+    assert scorecard.dimensions["technical_depth"].label == "Solid"
+    assert "parsing error" in scorecard.dimensions["technical_depth"].rationale
+
+    assert scorecard.dimensions["scalability_reliability"].score == 3
+
+    # Present dimensions should be scored normally
+    assert scorecard.dimensions["requirements_gathering"].score == 4
+    assert scorecard.dimensions["system_architecture"].score == 5
+
+
+def test_parse_scorecard_score_clamped_to_valid_range():
+    """Scores outside 1-5 range are clamped."""
+    raw = {
+        "dimensions": {
+            "requirements_gathering": {"score": 0, "rationale": "Low"},
+            "system_architecture": {"score": 10, "rationale": "High"},
+            "technical_depth": {"score": -1, "rationale": "Negative"},
+            "scalability_reliability": {"score": 5, "rationale": "Max"},
+            "communication": {"score": 1, "rationale": "Min"},
+        },
+        "narrative": "Edge case scoring.",
+    }
+    engine = ScoringEngine()
+    session = _make_session()
+    scorecard = engine._parse_scorecard(raw, session)
+
+    assert scorecard.dimensions["requirements_gathering"].score == 1  # clamped from 0
+    assert scorecard.dimensions["system_architecture"].score == 5    # clamped from 10
+    assert scorecard.dimensions["technical_depth"].score == 1        # clamped from -1
+    assert scorecard.dimensions["scalability_reliability"].score == 5
+    assert scorecard.dimensions["communication"].score == 1
+
+
+def test_parse_scorecard_missing_narrative_uses_default():
+    """Missing narrative field uses fallback text."""
+    raw = {
+        "dimensions": {dim: _make_dimension_data(3) for dim in DIMENSION_WEIGHTS},
+        # No "narrative" key
+    }
+    engine = ScoringEngine()
+    session = _make_session()
+    scorecard = engine._parse_scorecard(raw, session)
+
+    assert scorecard.narrative == "Narrative not available"
+
+
+def test_parse_scorecard_empty_dimensions_all_default():
+    """Completely empty dimensions dict defaults all to score 3."""
+    raw = {
+        "dimensions": {},
+        "narrative": "No dimensions.",
+    }
+    engine = ScoringEngine()
+    session = _make_session()
+    scorecard = engine._parse_scorecard(raw, session)
+
+    for dim_key in DIMENSION_WEIGHTS:
+        assert scorecard.dimensions[dim_key].score == 3
+        assert scorecard.dimensions[dim_key].label == "Solid"
+
+    # Overall score should be 3.0 (all 3s)
+    assert scorecard.overall_score == 3.0
+
+
+def test_parse_scorecard_malformed_dimension_data():
+    """Dimension with wrong type (e.g. string instead of dict) defaults to 3."""
+    raw = {
+        "dimensions": {
+            "requirements_gathering": "not a dict",
+            "system_architecture": _make_dimension_data(4),
+            "technical_depth": _make_dimension_data(4),
+            "scalability_reliability": _make_dimension_data(4),
+            "communication": _make_dimension_data(4),
+        },
+        "narrative": "Mostly valid.",
+    }
+    engine = ScoringEngine()
+    session = _make_session()
+    scorecard = engine._parse_scorecard(raw, session)
+
+    # Malformed dimension defaults to 3
+    assert scorecard.dimensions["requirements_gathering"].score == 3
+    # Others are fine
+    assert scorecard.dimensions["system_architecture"].score == 4

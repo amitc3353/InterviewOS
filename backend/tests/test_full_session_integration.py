@@ -346,6 +346,7 @@ async def test_full_45_min_session_simulation():
             },
             "overall_score": 3.9,
             "hire_signal": "HIRE",
+            "narrative": "Candidate demonstrated solid system design skills with clear architecture and good scoping.",
         }
 
         async def mock_anthropic_create(**kwargs):
@@ -360,12 +361,12 @@ async def test_full_45_min_session_simulation():
             mock_anthropic_class.return_value = mock_client
 
             # Trigger scorecard generation
-            scorecard = await agent._scoring_engine.generate_scorecard(agent.interview_session)
+            scorecard = await agent._scoring_engine.score_interview(agent.interview_session, agent.config)
 
         # Verify scorecard was generated
         assert scorecard is not None
         assert scorecard.overall_score > 0
-        assert scorecard.hire_signal in ["HIRE", "NO_HIRE", "STRONG_HIRE"]
+        assert scorecard.hire_signal in ["Strong Yes", "Lean Yes", "Lean No", "No"]
 
         # --- Final verification ---
 
