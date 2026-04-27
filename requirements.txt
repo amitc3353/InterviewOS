@@ -4,7 +4,7 @@ livekit-agents>=1.0.0
 
 # LiveKit plugins
 livekit-plugins-deepgram>=0.6.0
-livekit-plugins-openai>=0.7.0
+livekit-plugins-openai>=1.5.6
 livekit-plugins-silero>=0.6.0
 livekit-plugins-anthropic>=0.1.0
 livekit-plugins-cartesia>=0.5.0
