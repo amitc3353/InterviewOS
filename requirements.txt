@@ -1,6 +1,6 @@
 # LiveKit Agents framework (1.0+)
 livekit>=1.0.0
-livekit-agents>=1.0.0
+livekit-agents>=1.5.6
 
 # LiveKit plugins
 livekit-plugins-deepgram>=0.6.0
